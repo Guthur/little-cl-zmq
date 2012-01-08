@@ -2,18 +2,16 @@
 
 (in-package #:zmq-bindings)
 
+#++(declaim (optimize (speed 3)))
+
 (define-condition zmq-error
     (error)
-  ((error-string :initarg :error-string
-		 :reader error-string)
-   (func-name :initarg :func-name
-	      :reader func-name)
-   (error-number :initarg :error-number
+  ((error-number :initarg :error-number
 		 :reader error-number))
   (:report (lambda (condition stream)
-	      (format stream "An error was raised on a ZMQ funcall.~%")
-	      (format stream "Function: ~a~%" (func-name condition))
-	      (format stream "Error string: ~a~%" (error-string condition)))))
+	      (format stream "An error was raised on a ZMQ funcall.~%")	     
+	      (format stream "Error string: ~a~%"
+		      (strerror (error-number condition))))))
 
 (defconstant +VERSION-MAJOR+ 3)
 (defconstant +VERSION-MINOR+ 1)
@@ -65,7 +63,8 @@
 				(kwsym->special symbol)
 				count)))))
 
-(defmacro kwsym-value (kwsym)
+(defun kwsym-value (kwsym)
+  (declare (inline kwsym-value))
   (symbol-value (find-symbol (concatenate 'string "+"
 					  (symbol-name kwsym) "+")
 			     'zmq-bindings)))
@@ -75,6 +74,7 @@
   :pub
   :sub
   :req
+  :rep
   :dealer
   :router
   :pull
@@ -126,7 +126,7 @@
 	 (loop :for option :in options
 	       :collect `(,(first option)
 			  :accessor ,(first option)))
-	 '((ptr))))
+	 (list '(ptr))))
      ,@(loop :for option :in options
 	     :append `(,(when (member :get option)
 			  (macroexpand-1 `(make-getter ,(first option)
@@ -146,7 +146,7 @@
      (recovery-ivl 9 :int :get :set)
      (sndbuf 11 :int :get :set)
      (rcvbuf 12 :int :get :set)
-     (rcvmore 13 :int :get)
+     (rcvmore 13 :boolean :get)
      (fd 14 :int :get)
      (events 15 :int :get)
      (type 16 :int :get)
@@ -160,21 +160,22 @@
      (multicast-hops 25 :int :get :set)
      (rcvtimeo 27 :int :get :set)
      (sndtimeo 28 :int :get :set)
-     (ipv4only 31 :int :get :set)))
+     (ipv4only 31 :boolean :get :set)))
 
-(defmethod initialize-instance :before ((socket socket) &key type context)
-  (with-slots ((ptr ptr))
-      socket
-    (setf ptr (socket context type))))
+(defmethod initialize-instance :before ((socket socket)
+					&key skt-ptr type context)
+  (if skt-ptr
+      (setf (slot-value socket 'ptr) skt-ptr)
+      (setf (slot-value socket 'ptr) (socket context type))))
 
 (defun make-socket (ctx type)
   (make-instance 'socket :context ctx :type type))
 
+(defun init-socket (skt-ptr)
+  (make-instance 'socket :skt-ptr skt-ptr))
+
 (defun close-socket (skt)
   (close (slot-value skt 'ptr)))
-
-
-
 
 (define-sequence
   (:more 1))
@@ -183,18 +184,11 @@
   (:dontwait 1)
   :sndmore)
 
-(define-sequence
-  (:pollin 1)
-  (:pollout 2)
-  (:pollerr 4))
-
-
 (defmacro defcfun* (name-and-options return-type &body args)
   (let* ((c-name (car name-and-options))
          (l-name (cadr name-and-options))
          (n-name (cffi::format-symbol t "%~A" l-name))
          (name (list c-name n-name))
-
          (docstring (when (stringp (car args)) (pop args)))
          (ret (gensym)))
     (loop :with opt
@@ -219,16 +213,18 @@
 				     `(< ,ret 0))
 				(let ((errno (errno)))
 				  (error 'zmq-error
-					 :error-number errno
-					 :func-name ,(symbol-name l-name)
-					 :error-string 
-					 (cffi:foreign-string-to-lisp
-					  (strerror errno))))
+					 :error-number errno))
 				,ret))))))))
 
-(cffi:defcallback cffi-alloc-free-fn :void ((data :pointer) (hint :pointer))
+(cffi:defcallback cffi-free-fn :void ((data :pointer) (hint :pointer))
   (declare (ignore hint))
-  (cffi:foreign-free data))
+  (print "free")
+  #++(cffi:foreign-free data))
+
+(cffi:defcallback cffi-free-string-fn :void ((data :pointer) (hint :pointer))
+  (declare (ignore hint))
+  (print "free-string")
+  #++(cffi:foreign-string-free data))
 
 (cffi:defcfun ("zmq_errno" errno) :int)
 
@@ -237,42 +233,41 @@
 
 ;;; ZMQ Message definition
 
-(cffi:defcstruct msg-t
-	(_ :pointer))
+(cffi:defcstruct (msg-t :size 32))
 
-(cffi:defcfun ("zmq_msg_init" msg-init) :int
-  (msg msg-t))
+(defcfun* ("zmq_msg_init" msg-init) :int
+  (msg :pointer msg-t))
 
-(cffi:defcfun ("zmq_msg_init_size" msg-init-size) :int
-  (msg msg-t)
-  (size :pointer))
+(defcfun* ("zmq_msg_init_size" msg-init-size) :int
+  (msg :pointer msg-t)
+  (size size-t))
 
-(cffi:defcfun ("zmq_msg_init_data" msg-init-data) :int
-  (msg msg-t)
+(defcfun* ("zmq_msg_init_data" msg-init-data) :int
+  (msg :pointer msg-t)
   (data :pointer)
-  (size :pointer)
+  (size size-t)
   (ffn :pointer)
   (hint :pointer))
 
-(cffi:defcfun ("zmq_msg_close" msg-close) :int
-  (msg msg-t))
+(defcfun* ("zmq_msg_close" msg-close) :int
+  (msg :pointer msg-t))
 
-(cffi:defcfun ("zmq_msg_move" msg-move) :int
-  (dest msg-t)
-  (src msg-t))
+(defcfun* ("zmq_msg_move" msg-move) :int
+  (dest :pointer msg-t)
+  (src :pointer msg-t))
 
-(cffi:defcfun ("zmq_msg_copy" msg-copy) :int
-  (dest msg-t)
-  (src msg-t))
+(defcfun* ("zmq_msg_copy" msg-copy) :int
+  (dest :pointer msg-t)
+  (src :pointer msg-t))
 
-(cffi:defcfun ("zmq_msg_data" msg-data) :pointer
-  (msg msg-t))
+(defcfun* ("zmq_msg_data" msg-data) :pointer
+  (msg :pointer msg-t))
 
-(cffi:defcfun ("zmq_msg_size" msg-size) :pointer
-  (msg msg-t))
+(defcfun* ("zmq_msg_size" msg-size) size-t
+  (msg :pointer msg-t))
 
-(cffi:defcfun ("zmq_getmsgopt" getmsgopt) :int
-  (msg msg-t)
+(defcfun* ("zmq_getmsgopt" getmsgopt) :int
+  (msg :pointer msg-t)
   (option :int)
   (optval :pointer)
   (optvallen :pointer))
@@ -328,15 +323,20 @@
 
 (defcfun* ("zmq_sendmsg" sendmsg) :int
   (s :pointer)
-  (msg msg-t)
+  (msg :pointer msg-t)
   (flags :int))
 
 (defcfun* ("zmq_recvmsg" recvmsg) :int
   (s :pointer)
-  (msg msg-t)
+  (msg :pointer msg-t)
   (flags :int))
 
 ;;; I/O Multiplexing
+
+(define-sequence
+  (:pollin 1)
+  (:pollout 2)
+  (:pollerr 4))
 
 (cffi:defcstruct pollitem-t
 	(socket :pointer)
@@ -345,7 +345,19 @@
 	(revents :short))
 
 (defcfun* ("zmq_poll" poll) :int
-  (items :pointer)
+  (items :pointer pollitem-t)
   (nitems :int)
   (timeout :long))
+
+;;; MISC functions
+
+(cffi:defcfun ("memcpy" memcpy) :pointer
+  (dst :pointer)
+  (src :pointer)
+  (len size-t))
+
+(cffi:defcfun ("alloc_foreign" alloc-foreign) :pointer
+  (size size-t))
+
+(cffi:defcfun ("get_free_fn" get-free-fn) :pointer)
 

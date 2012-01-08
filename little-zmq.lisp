@@ -1,51 +1,45 @@
 (in-package #:little-zmq)
 
-(defclass message ()
-  ((msg-t
-    :reader msg-t-ptr)))
+#++(declaim (optimize (speed 3)))
 
-(defmethod initialize-instance :after ((message message))
-  (%zmq::msg-init (msg-t-ptr message)))
 
-(defclass zero-copy-message ()
-  ((free-fn
-    :reader free-fn
-    :initarg :free-fn
-    :initform '%zmq::cffi-alloc-free-fn)))
+(defun call-with-retry (predicate thunk)
+  (declare (inline call-with-retry))
+  (declare (type (function (condition) boolean) predicate)
+	   (type (function nil) thunk))
+  (tagbody retry
+     (return-from call-with-retry
+       (handler-bind ((t (lambda (condition)			   
+                           (when (funcall predicate condition)
+                             (go retry)))))
+         (funcall thunk)))))
 
-(defmethod initialize-instance :after ((message zero-copy-message)
-				       &key data size hint)
-  (%zmq::msg-init-data (msg-t-ptr message)
-		       data
-		       size
-		       (free-fn message)
-		       hint))
+(defmacro with-zmq-eintr-retry (&body body)
+  `(call-with-retry
+    (lambda (condition)
+      (and (typep condition '%zmq::zmq-error)
+           (eql (%zmq::error-number condition)
+                %zmq::+eintr+)))
+    (lambda ()
+      ,@body)))
 
-(defclass string-message (message)
-  ())
-
-(defun make-message (&optional size)
-  (make-instance 'message))
-
-(defun make-string-message (string)
-  (declare (ignore string))
-  (make-instance 'message))
-
-(defun make-zero-copy-message (data size &optional hint)
-  (make-instance 'zero-copy-message
-		 :data data :size size :hint hint))
-
-(defmacro with-context ((ctx &optional (io-threads 0)) &body body)
+(defmacro with-context ((ctx &optional (io-threads 1)) &body body)
   `(let ((,ctx (%zmq:init ,io-threads)))
      (unwind-protect
 	  ,@body
        (%zmq:term ,ctx))))
 
-(defmacro with-socket ((skt ctx type) &body body)
+(defmacro with-socket (((skt ctx type) &key connect bind)
+		       &body body)
   `(let* ((,skt (%zmq:make-socket ,ctx
-				  ,(macroexpand `(%zmq:kwsym-value ,type)))))
+				  (%zmq:kwsym-value ,type))))
      (unwind-protect
-	  ,@body
+	  ,(cond
+	     (bind
+	      `(bind ,skt ,bind))
+	     (connect
+	      `(connect ,skt ,connect)))
+       ,@body
        (%zmq:close-socket ,skt))))
 
 (defmacro with-sockets (socket-list &body body)
@@ -55,30 +49,47 @@
 	   ,@body))
       `(progn ,@body)))
 
-(defmethod sendmsg ((socket %zmq::socket) (data sb-sys:system-area-pointer) &key (send-more nil))
-  (let ((msg (make-zero-copy-message data 0)))
-    (sendmsg socket msg :send-more send-more)))
+(defun bind (socket address)
+  (%zmq::bind (slot-value socket '%zmq::ptr) address))
 
-(defmethod sendmsg ((socket %zmq::socket) (data string) &key (send-more nil))
+(defun connect (socket address)
+  (%zmq::connect (slot-value socket '%zmq::ptr) address))
+
+(defmethod sendmsg ((socket %zmq::socket) (data vector)
+		    &key (send-more nil) (eintr-retry t))
+  (let ((msg (make-octet-message data)))
+    (sendmsg socket msg :send-more send-more :eintr-retry eintr-retry)))
+
+(defmethod sendmsg ((socket %zmq::socket) (data string)
+		    &key (send-more nil) (eintr-retry t))
   (let ((msg (make-string-message data)))
-    (sendmsg socket msg :send-more send-more)))
+    (sendmsg socket msg :send-more send-more :eintr-retry eintr-retry)))
 
-(defmethod sendmsg ((socket %zmq::socket) (data message) &key (send-more nil))
-  (%zmq:sendmsg (slot-value socket 'ptr)
-		(slot-value data 'msg-t)
-		(if send-more (%zmq:kwsym-value :sndmore) 0)))
+(defmethod sendmsg ((socket %zmq::socket) (data message)
+		    &key (send-more nil) (eintr-retry t))
+  (if eintr-retry
+      (with-zmq-eintr-retry
+	(%zmq:sendmsg (slot-value socket '%zmq::ptr)
+		      (msg-t-ptr data)
+		      (if send-more (%zmq:kwsym-value :sndmore) 0)))
+      (%zmq:sendmsg (slot-value socket '%zmq::ptr)
+		      (msg-t-ptr data)
+		      (if send-more (%zmq:kwsym-value :sndmore) 0))))
 
-(defmethod)
-
-(defmethod recvmsg ((socket %zmq::socket) &key (blocking t) (message-type 'message))
-  (let ((msg (make-instance message-type)))
-    (%zmq:recvmsg (slot-value socket 'ptr)
-		  (slot-value msg 'msg-t)
-		  (if blocking 0 (%zmq:kwsym-value :dontwait)))
+(defmethod recvmsg ((socket %zmq::socket)
+		    &key (blocking t) (message-type 'message) (reuse-msg nil)
+		      (eintr-retry t))
+  (let ((msg (if reuse-msg
+		 reuse-msg
+		 (make-instance 'message))))
+    (if eintr-retry
+	(with-zmq-eintr-retry
+	  (%zmq:recvmsg (slot-value socket '%zmq::ptr)
+			(slot-value msg 'msg-t)
+			(if blocking 0 (%zmq:kwsym-value :dontwait))))
+	(%zmq:recvmsg (slot-value socket '%zmq::ptr)
+		      (slot-value msg 'msg-t)
+		      (if blocking 0 (%zmq:kwsym-value :dontwait))))
+    (unless (eql message-type 'message) 
+      (change-class msg message-type))
     msg))
-
-(defun test ()
-  (with-context (ctx)
-    (with-socket (skt ctx :pull)
-      (print (setf (%zmq:identity skt) "test"))
-      (print (%zmq:identity skt)))))

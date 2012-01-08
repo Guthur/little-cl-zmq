@@ -5,10 +5,13 @@
 
 (asdf:defsystem #:little-zmq
   :serial t
-  :depends-on (#:cffi)
+  :depends-on (#:cffi #:trivial-garbage #:bordeaux-threads)
   :components ((:file "bindings-package")
 	       (cffi-grovel:grovel-file "grovel.spec")
 	       (:file "bindings")
 	       (:file "package")
-               (:file "little-zmq")))
+	       (:file "message")
+	       (:file "poll")
+               (:file "little-zmq")
+	       (:file "tests")))
 
