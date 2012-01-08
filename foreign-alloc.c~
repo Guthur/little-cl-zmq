@@ -1,9 +1,0 @@
-#include <stdlib.h>
-
-void* alloc_foreign (size_t size) {
-  return malloc (size);
-}
-
-void free_fn (void* data, void* hint) {
-  free (data);
-} 
