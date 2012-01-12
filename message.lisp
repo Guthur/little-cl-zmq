@@ -36,6 +36,9 @@
        (%zmq::msg-init-size (msg-t-ptr message) size))
       (t (%zmq::msg-init (msg-t-ptr message))))))
 
+(defun size (msg)
+  (%zmq::msg-size (msg-t-ptr msg)))
+
 ;;; Zero Copy Message
 
 (defclass zero-copy-message (message)
@@ -96,7 +99,7 @@
 	   (ptr (%zmq::msg-data msg-t))
 	   (array (make-array len :element-type '(unsigned-byte 8))))
       (dotimes (index len)
-	(setf (aref array index) (cffi:mem-aref ptr :char index)))
+	(setf (aref array index) (cffi:mem-aref ptr :uchar index)))
       array)))
 
 (defmethod initialize-instance :around ((message octet-message) &key octets)
@@ -129,3 +132,20 @@
   (declare (inline make-octet-message)
 	   (type (vector (unsigned-byte 8))))
   (make-instance 'octet-message :octets data))
+
+
+;;; Helpers
+
+(defun uuid-address-to-string (message)
+  (let ((message (change-class message 'octet-message)))
+    (with-output-to-string (s)
+      (format s "~{~X~}" (coerce (data message) 'cons)))))
+
+(defun unwrap (msg-list)
+  (let ((address (pop msg-list)))
+    (when (zerop (size (first msg-list)))
+      (pop msg-list))
+    address))
+
+(defun wrap (address msg-list)
+  (append (list address) (append (list (make-message 0)) msg-list)))

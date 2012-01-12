@@ -53,9 +53,4 @@
   (:windows "libzmq.dll")
   (t "libzmq"))
 
-
-(cffi:define-foreign-library foreign-alloc
-  (:unix "libforeign-alloc.so.1.0.1" ))
-
 (cffi:use-foreign-library zeromq)
-(cffi:use-foreign-library foreign-alloc)

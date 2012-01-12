@@ -54,22 +54,38 @@
 	(funcall pollerr socket %zmq::revents)))))
 
 (defun poll (poll-items num-items timeout eintr-retry)
-  (if eintr-retry
-      (with-zmq-eintr-retry
-	(%zmq::poll poll-items num-items timeout))
-      (%zmq::poll poll-items num-items timeout)))
+  (with-zmq-eintr-retry eintr-retry
+    (%zmq::poll poll-items num-items timeout)))
+
 
 (defun repoll ()
-  (return-from repoll))
+  (signal (make-condition 'repoll)))
+
+(defun exit-poll ()
+  (signal (make-condition 'exit-poll)))
+
+(defun bypass-poll ()
+  (signal (make-condition 'bypass)))
+
+(define-condition repoll ()
+  ())
+
+(define-condition exit-poll ()
+  ())
+
+(define-condition bypass-poll ()
+  ())
+
 
 (defmacro with-polls ((poll-items
 		       &key (timeout -1) (loop nil) (eintr-retry t))
 		      &body body)
-  (alexandria:with-gensyms (poll-item-list again)
+  (alexandria:with-gensyms (poll-item-list again result exit bypass)
     `(cffi:with-foreign-object (poll-foreign-array
 				'%zmq::pollitem-t
 				,(length poll-items))
-       (let ((,poll-item-list
+       (let ((,result nil)
+	     (,poll-item-list
 	       (list ,@(loop :for poll-item :in poll-items
 			     :for item :from 0
 			     :collect
@@ -81,12 +97,24 @@
 							    '%zmq::pollitem-t
 							    ,item)
 					     ,@(cdr poll-item))))))
-	 (tagbody
-	    ,again
-	    (poll poll-foreign-array ,(length poll-items) ,timeout ,eintr-retry)
-	    (block repoll
-	      (loop :for item :in ,poll-item-list :do
-		(fire-events item)))
-	    ,@body
-	    ,(when loop
-	       `(go ,again)))))))
+	 (block ,exit
+	   (tagbody		  
+	      ,again	      
+	      (poll poll-foreign-array ,(length poll-items) ,timeout ,eintr-retry)
+	      (block ,bypass
+		(handler-bind ((repoll (lambda (condition)
+					 (declare (ignore condition))
+					 (go ,again)))
+			       (exit-poll (lambda (condition)
+					    (declare (ignore condition))
+					    (return-from ,exit ,result)))
+			       (bypass-poll (lambda (condition)
+					      (declare (ignore condition))
+					      (return-from ,bypass))))
+		  (loop :for item :in ,poll-item-list
+			:do
+			(fire-events item))))
+	      (setf ,result (progn
+			      ,@body))
+	      ,(when loop
+		 `(go ,again))))))))

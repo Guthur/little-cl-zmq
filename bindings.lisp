@@ -355,9 +355,3 @@
   (dst :pointer)
   (src :pointer)
   (len size-t))
-
-(cffi:defcfun ("alloc_foreign" alloc-foreign) :pointer
-  (size size-t))
-
-(cffi:defcfun ("get_free_fn" get-free-fn) :pointer)
-

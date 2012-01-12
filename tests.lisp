@@ -90,49 +90,50 @@
 
 (defun test ()
   (with-context (ctx)
-    (with-sockets (((rep ctx :rep) :bind "inproc://testa")
+    (with-sockets (((rep ctx :router) :bind "inproc://testa")
 		   ((req ctx :req) :connect "inproc://testa"))
       (let ((msg (make-octet-message
 		  (make-array 5 :element-type '(unsigned-byte 8)
 				:initial-contents '(1 2 3 4 5)))))
 	(sendmsg req msg)
-	(let ((ret (recvmsg rep :message-type 'octet-message)))
-	  (print (data ret)))))))
+	(let ((ret (recvall rep)))
+	  (print (uuid-address-to-string (change-class (first ret) 'octet-message))))))))
+
 
 (defun poll-test (msg-count)
   (with-context (ctx)
     (with-sockets (((rep ctx :rep) :bind "tcp://*:6666")
 		   ((req ctx :req) :connect "tcp://localhost:6666"))
-      (sleep 2)
+      (sleep 1)
       (sendmsg req "Request")
-      (block end
-	(with-polls (((rep :pollin
-			   (lambda (skt revents)
-			     (declare (ignore revents))
-			     (let ((ret (recvmsg skt
-						 :message-type
-						 'string-message)))
-			       (print (data ret))
-			       (sendmsg skt "Rep"))
-			     (repoll)))
-		      (req :pollin
-			   (lambda (skt revents)
-			     (declare (ignore revents))			     
-			     (let ((ret (recvmsg skt
-						 :message-type
-						 'string-message)))
-			       (print (data ret))
-			       (when (zerop (decf msg-count))
-				 (return-from end))
-			       (sendmsg skt "Request")))))
-		     :timeout 1000
-		     :loop t))))))
+      (let ((count 0))
+	(print
+	 (with-polls (((rep :pollin
+			    (lambda (skt revents)
+			      (declare (ignore revents))
+			      (let ((ret (recvmsg skt
+						  :message-type
+						  'string-message)))
+				(print (data ret))
+				(sendmsg skt "Rep"))))
+		       (req :pollin
+			    (lambda (skt revents)
+			      (declare (ignore revents))
+			      (let ((ret (recvmsg skt
+						  :message-type
+						  'string-message)))
+				(print (data ret))
+				(when (zerop (decf msg-count))
+				  (exit-poll))
+				(sendmsg skt "Request")))))
+		      :timeout 1000
+		      :loop t)
+	   (incf count)))))))
 
 
 (defun client ()
   (with-context (ctx)
     (with-socket ((req ctx :req) :connect "tcp://localhost:5559")
-      (print "client started")
       (dotimes (request 10)
 	(sendmsg req "Hello")
 	(let ((msg (recvmsg req :message-type 'string-message)))
@@ -147,7 +148,7 @@
 	   (format t "Received request: ~a" (data msg))
 	   (sleep 1)
 	   (sendmsg rep (with-output-to-string (s)
-			  (format s "World ~a~%" id)))))))))
+			  (format s "World ~a" id)))))))))
 
 (defun broker ()
   (with-context (ctx) 
@@ -155,31 +156,45 @@
 		   ((backend ctx :dealer) :bind "tcp://*:5560"))
       (flet ((frontend-handler (skt revents)
 	       (declare (ignore revents))
-	       (let ((msg (recvmsg skt)))
-		 (loop :while (%zmq::rcvmore skt) :do
-		   (sendmsg backend msg :send-more t)
-		   (setf msg (recvmsg skt)))
-		 (sendmsg backend msg)))
+	       (sendmsg backend (recvall skt)))
 	     (backend-handler (skt revents)
 	       (declare (ignore revents))
-	       (let ((msg (recvmsg skt)))
-		 (loop :while (%zmq::rcvmore skt) :do
-		   (sendmsg frontend msg :send-more t)
-		   (setf msg (recvmsg skt)))
-		 (sendmsg frontend msg))))
+	       (sendmsg frontend (recvall skt))))
 	(with-polls (((frontend :pollin #'frontend-handler)
 		      (backend :pollin #'backend-handler))
 		     :loop t))))))
-
 
 (defun run-broker-test ()
   (let ((broker (bt:make-thread #'broker :name "broker"))
 	(servers (loop :for x :upto 3
 		       :collect
 		       (bt:make-thread (server x) :name "server"))))
-    (declare (ignore servers broker))
     (sleep 1)
-    (client)))
+    (client)
+    (dolist (server servers)
+      (bt:destroy-thread server))
+    (bt:destroy-thread broker)))
+
+#++(with-context (ctx)
+  (with-sockets (((router-skt ctx :router)
+		  :identity "frontend"
+		  :bind "tcp://*:5555")
+		 ((req-skt ctx :req)
+		  :identity "frontend"
+		  :bind "tcp://*:5555"))
+    (sendmsg req "Hello")
+    (recvall router-skt)))
+
+#++(with-sockets ((router-skt ctx :router
+			   :identity "frontend"
+			   :bind "tcp://*:5555")
+	       (req-skt ctx :req
+			:identity "frontend"
+			:bind "tcp://*:5555"))
+  (sendmsg req "Hello")
+  (recvall router-skt))
+
+
 
 (defun test-router ()
   (with-context (ctx)
