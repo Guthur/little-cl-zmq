@@ -1,6 +1,6 @@
 (in-package #:little-zmq)
 
-#++(declaim (optimize (speed 3)))
+(declaim (optimize (speed 3)))
 
 (defmacro with-context ((ctx &optional (io-threads 1)) &body body)
   `(let ((,ctx (%zmq:init ,io-threads)))
@@ -9,22 +9,13 @@
 	    ,@body)
        (%zmq:term ,ctx))))
 
-(defmacro with-socket (((skt ctx type) &key connect bind identity)
+(defmacro with-socket ((socket context type &rest parameters)
 		       &body body)
-  `(let* ((,skt (%zmq:make-socket ,ctx
-				  (%zmq:kwsym-value ,type))))
+  `(let ((,socket (%zmq:make-socket ,context ,type ,@parameters)))
      (unwind-protect
 	  (progn
-	    ,(when identity
-	       `(setf (%zmq:identity ,skt) ,identity))
-	    ,(cond
-	       (bind
-		`(bind ,skt ,bind))
-	       (connect
-		`(dolist (addr (alexandria:ensure-list ,connect))
-		   (connect ,skt addr))))
 	    ,@body)
-       (%zmq:close-socket ,skt))))
+       (%zmq:close-socket ,socket))))
 
 (defmacro with-sockets (socket-list &body body)
   (if socket-list
@@ -61,17 +52,22 @@
 		(send (cdr msg-list))))))
     (send data)))
 
+(defmethod sendmsg ((socket %zmq::socket) (data (eql nil))
+		    &key (send-more nil) (eintr-retry t))
+  (with-message (msg)
+    (sendmsg socket msg :eintr-retry eintr-retry :send-more send-more)))
+
 (defmethod sendmsg ((socket %zmq::socket) (data vector)
 		    &key (send-more nil) (eintr-retry t))
   (declare (type (boolean) send-more eintr-retry)
-	   (type (vector (unsigned-byte 8))))
-  (let ((msg (make-octet-message data)))
+	   (type (vector (unsigned-byte 8) *) data))
+  (with-message (msg data)
     (sendmsg socket msg :send-more send-more :eintr-retry eintr-retry)))
 
 (defmethod sendmsg ((socket %zmq::socket) (data string)
 		    &key (send-more nil) (eintr-retry t))
   (declare (type (boolean) send-more eintr-retry))
-  (let ((msg (make-string-message data)))
+  (with-message (msg data)
     (sendmsg socket msg :send-more send-more :eintr-retry eintr-retry)))
 
 (defmethod sendmsg ((socket %zmq::socket) (data message)
@@ -80,27 +76,55 @@
   (with-zmq-eintr-retry eintr-retry
     (%zmq:sendmsg (slot-value socket '%zmq::ptr)
 		  (msg-t-ptr data)
-		  (if send-more (%zmq:kwsym-value :sndmore) 0))))
+		  (if send-more %zmq::+sndmore+ 0))))
 
-(defun recvmsg (socket &key (blocking t) (message-type 'message) (reuse-msg nil)
-			 (eintr-retry t))
+(defmethod sendmsg ((socket %zmq::socket) (data function)
+		    &key (send-more nil) (eintr-retry t))
+  (with-message (msg)
+    (multiple-value-bind (msg more)
+	(funcall data msg)
+      (if more
+	  (progn
+	    (sendmsg socket msg :send-more t :eintr-retry eintr-retry)
+	    (sendmsg socket data :send-more send-more :eintr-retry eintr-retry))
+	  (sendmsg socket msg :send-more send-more :eintr-retry eintr-retry)))))
+
+(defun recvmsg (socket message &key (blocking t) (as 'message) (eintr-retry t))
   (declare (type (boolean) eintr-retry blocking)
-	   (type (or message null) reuse-msg)
-	   (type symbol message-type)
+	   (type message message)
+	   (type symbol as)
 	   (type %zmq::socket socket))
-  (let ((msg (if reuse-msg
-		 reuse-msg
-		 (make-instance 'message))))
+  (let ((blocking (if blocking 0 %zmq::+dontwait+)))
     (with-zmq-eintr-retry eintr-retry
       (%zmq:recvmsg (slot-value socket '%zmq::ptr)
-		    (slot-value msg 'msg-t)
-		    (if blocking 0 (%zmq:kwsym-value :dontwait))))    
-    (unless (eql message-type 'message) 
-      (change-class msg message-type))
-    msg))
+		    (msg-t-ptr message)
+		    blocking))
+    (unless (eql as 'message)
+      (change-class message as))
+    message))
 
-(defun recvall (socket &key (blocking t)
+(defun recvall (socket &key (blocking t) (eintr-retry))
+  (let ((more t))
+    (lambda (msg &optional (message-type 'message))
+      (if more
+	  (progn
+	    (recvmsg socket msg :as message-type
+				:blocking blocking
+				:eintr-retry eintr-retry)
+	    (setf more (%zmq:rcvmore socket))
+	    (values msg more))
+	  (values nil nil)))))
+
+#++(defun recvall (socket msg-list &key (blocking t)
 			 (eintr-retry t))
-  (loop
-    :collect (recvmsg socket :blocking blocking :eintr-retry eintr-retry)
-    :while (%zmq:rcvmore socket)))
+  (let ((msgs (loop
+		:collect (if (parts msg-list)
+			     (progn			       
+			       (recvmsg socket (pop (parts msg-list))
+					:blocking blocking
+					:eintr-retry eintr-retry))
+			     (progn
+			       (recvmsg socket (make-message nil))))
+		:while (%zmq:rcvmore socket))))
+    (destroy-msg-list msg-list)
+    (setf (parts msg-list) msgs)))

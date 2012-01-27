@@ -5,7 +5,11 @@
 
 (asdf:defsystem #:little-zmq
   :serial t
-  :depends-on (#:cffi #:trivial-garbage #:bordeaux-threads #:alexandria)
+  :depends-on (#:cffi
+	       #:trivial-garbage
+	       #:bordeaux-threads
+	       #:alexandria
+	       #:flexi-streams)
   :components ((:file "bindings-package")
 	       (cffi-grovel:grovel-file "grovel.spec")
 	       (:file "bindings")

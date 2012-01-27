@@ -1,5 +1,7 @@
 (in-package #:little-zmq)
 
+(declaim (optimize (speed 3)))
+
 (cffi:defcstruct time-spec
   "Time Spec"
   (seconds :int)
@@ -57,11 +59,11 @@
 (defun make-worker (ctx message-count)
   (declare (type fixnum  message-count))
   (lambda ()
-    (with-socket ((rep ctx :rep) :connect "tcp://localhost:5559")
-      (let ((msg (make-message)))
+    (with-socket (rep ctx :rep :connect "inproc://lat-test")
+      (with-message (msg)
 	(dotimes (i message-count)
 	  (with-zmq-eintr-retry
-	    (sendmsg rep (recvmsg rep :reuse-msg msg))))))))
+	      (sendmsg rep (recvmsg rep :reuse-msg msg))))))))
 
 (defmacro with-stopwatch (&body body)
   (alexandria:with-gensyms (ips)
@@ -76,93 +78,99 @@
 (defun inproc-lat (message-size message-count)
   (declare (type fixnum message-size message-count))
   (with-context (ctx 1)
-    (with-socket ((req ctx :req) :bind "tcp://*:5559")
+    (with-socket (req ctx :req
+		      :bind "inproc://lat-test")
       (let ((worker (bt:make-thread (make-worker ctx message-count)
-				    :name "worker"))
-	    (msg (make-message message-size)))
+				    :name "worker")))
 	(declare (ignore worker))
-	(print (/ (/ (with-stopwatch
-		       (dotimes (x message-count)			 
-			 (sendmsg req msg)
-			 (setf msg (recvmsg req :reuse-msg msg))))
-		     1000)
-		  (* message-count 2.0)))))))
+	(with-message (msg message-size)
+	  (print (/ (/ (with-stopwatch
+			 (dotimes (x message-count)			 
+			   (sendmsg req msg)
+			   (setf msg (recvmsg req :reuse-msg msg))))
+		       1000)
+		    (* message-count 2.0))))))))
+
 
 (defun test ()
   (with-context (ctx)
-    (with-sockets (((rep ctx :router) :bind "inproc://testa")
-		   ((req ctx :req) :connect "inproc://testa"))
-      (let ((msg (make-octet-message
-		  (make-array 5 :element-type '(unsigned-byte 8)
-				:initial-contents '(1 2 3 4 5)))))
-	(sendmsg req msg)
-	(let ((ret (recvall rep)))
-	  (print (uuid-address-to-string (change-class (first ret) 'octet-message))))))))
+    (with-sockets ((rep ctx :router
+			:identity "ROUTER"
+			:bind "inproc://testa")
+		   (req ctx :req
+			:connect "inproc://testa"))      
+      (sendmsg req "Hello")
+      (with-multi-part-message msg
+	(recvall rep msg)
+	(print (data (as-string-message (third (parts msg)))))
+	(setf (data (third (parts msg))) "World")
+	(sendmsg rep (parts msg))
+	(with-message (msg)
+	  (print (data (recvmsg req msg :as 'string-message))))))))
 
 
 (defun poll-test (msg-count)
   (with-context (ctx)
-    (with-sockets (((rep ctx :rep) :bind "tcp://*:6666")
-		   ((req ctx :req) :connect "tcp://localhost:6666"))
+    (with-sockets ((rep ctx :rep :bind "tcp://*:6667")
+		   (req ctx :req :connect "tcp://localhost:6667"))
       (sleep 1)
       (sendmsg req "Request")
-      (let ((count 0))
-	(print
-	 (with-polls (((rep :pollin
-			    (lambda (skt revents)
-			      (declare (ignore revents))
-			      (let ((ret (recvmsg skt
-						  :message-type
-						  'string-message)))
-				(print (data ret))
-				(sendmsg skt "Rep"))))
-		       (req :pollin
-			    (lambda (skt revents)
-			      (declare (ignore revents))
-			      (let ((ret (recvmsg skt
-						  :message-type
-						  'string-message)))
-				(print (data ret))
-				(when (zerop (decf msg-count))
-				  (exit-poll))
-				(sendmsg skt "Request")))))
-		      :timeout 1000
-		      :loop t)
-	   (incf count)))))))
+      (with-poll-list (poll-list (rep-item rep :pollin)
+				 (req-item req :pollin))	
+	(loop
+	  (when (poll poll-list 1000 t)
+	    (print (has-events rep-item))
+	    (when (has-events rep-item)
+	      (let ((ret (recvmsg rep :as 'string-message)))
+		(print (data ret))
+		(sendmsg rep "Rep")))
+	    (when (has-events req-item)
+	      (let ((ret (recvmsg req :as 'string-message)))
+		(print (data ret))
+		(when (zerop (decf msg-count))
+		  (return-from poll-test "finished"))
+		(sendmsg req "Request")))))))))
 
 
 (defun client ()
   (with-context (ctx)
-    (with-socket ((req ctx :req) :connect "tcp://localhost:5559")
-      (dotimes (request 10)
-	(sendmsg req "Hello")
-	(let ((msg (recvmsg req :message-type 'string-message)))
+    (with-socket (req ctx :req :connect "tcp://localhost:5559")
+      (with-message (msg)
+	(dotimes (request 10)
+	  (sendmsg req (with-output-to-string (s)
+			 (format s "Hello ~a" request)))
+	  (recvmsg req msg :as 'string-message)
 	  (format t "Received reply: ~a ~a.~%" request (data msg)))))))
 
-(defun server (id)
-  (lambda ()
-    (with-context (ctx)
-      (with-socket ((rep ctx :rep) :connect "tcp://localhost:5560")
-	(loop
-	 (let ((msg (recvmsg rep :message-type 'string-message)))
-	   (format t "Received request: ~a" (data msg))
-	   (sleep 1)
-	   (sendmsg rep (with-output-to-string (s)
-			  (format s "World ~a" id)))))))))
+(let ((out *standard-output*))
+  (defun server (id)
+    (lambda ()
+      (with-context (ctx)
+	(with-socket (rep ctx :rep :connect "tcp://localhost:5560")
+	  (with-message (msg)
+	    (loop
+	      (recvmsg rep msg :as 'string-message)
+	      (format out "Server ~a: Received request: ~S~%" id (data msg))
+	      (sleep 1)
+	      (setf (data msg) (with-output-to-string (s)
+				 (format s "~s \"World\" from Server ~a"
+					 (data msg) id)))
+	      (sendmsg rep msg))))))))
 
 (defun broker ()
   (with-context (ctx) 
-    (with-sockets (((frontend ctx :router) :bind "tcp://*:5559")
-		   ((backend ctx :dealer) :bind "tcp://*:5560"))
-      (flet ((frontend-handler (skt revents)
-	       (declare (ignore revents))
-	       (sendmsg backend (recvall skt)))
-	     (backend-handler (skt revents)
-	       (declare (ignore revents))
-	       (sendmsg frontend (recvall skt))))
-	(with-polls (((frontend :pollin #'frontend-handler)
-		      (backend :pollin #'backend-handler))
-		     :loop t))))))
+    (with-sockets ((frontend ctx :router :bind "tcp://*:5559")
+		   (backend ctx :dealer :bind "tcp://*:5560"))
+      (with-poll-list (polls (front frontend :pollin)
+			     (back frontend :pollin))
+	(loop
+	  (when (poll polls)
+	    (when (has-events front)
+	      (with-message (msg)		
+		(sendmsg backend (recvall frontend))))
+	    (when (has-events back)
+	      (with-message (msg)		
+		(sendmsg frontend (recvall backend))))))))))
 
 (defun run-broker-test ()
   (let ((broker (bt:make-thread #'broker :name "broker"))
@@ -175,34 +183,12 @@
       (bt:destroy-thread server))
     (bt:destroy-thread broker)))
 
-#++(with-context (ctx)
-  (with-sockets (((router-skt ctx :router)
-		  :identity "frontend"
-		  :bind "tcp://*:5555")
-		 ((req-skt ctx :req)
-		  :identity "frontend"
-		  :bind "tcp://*:5555"))
-    (sendmsg req "Hello")
-    (recvall router-skt)))
-
-#++(with-sockets ((router-skt ctx :router
-			   :identity "frontend"
-			   :bind "tcp://*:5555")
-	       (req-skt ctx :req
-			:identity "frontend"
-			:bind "tcp://*:5555"))
-  (sendmsg req "Hello")
-  (recvall router-skt))
-
-
 
 (defun test-router ()
   (with-context (ctx)
-    (with-sockets (((frontend ctx :router) :bind "tcp://*:20006")
-		   ((req ctx :req) :connect "tcp://localhost:20006"))
-      (sendmsg req (make-octet-message (make-array 5
-						   :element-type '(unsigned-byte 8)
-						   :initial-contents '(1 2 3 4 5))))
-      (recvmsg frontend :message-type 'octet-message)
-      (recvmsg frontend)
-      (print (data (recvmsg frontend :message-type 'octet-message))))))
+    (with-sockets ((frontend ctx :dealer :bind "tcp://*:20006")
+		   (rep ctx :rep
+			:connect "tcp://localhost:20006"
+			:identity "A"))
+      (sendmsg frontend '("A" nil "Hello"))
+      (print (data (recvmsg rep :as 'string-message))))))

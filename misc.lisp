@@ -1,9 +1,9 @@
 (in-package #:little-zmq)
 
+(declaim (optimize (speed 3)))
+
 (defun call-with-retry (predicate thunk)
   (declare (inline call-with-retry))
-  (declare (type (function (condition) boolean) predicate)
-	   (type (function nil) thunk))
   (tagbody retry
      (return-from call-with-retry
        (handler-bind ((t (lambda (condition)			   

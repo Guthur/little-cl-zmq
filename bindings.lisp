@@ -2,7 +2,7 @@
 
 (in-package #:zmq-bindings)
 
-#++(declaim (optimize (speed 3)))
+(declaim (optimize (speed 3)))
 
 (define-condition zmq-error
     (error)
@@ -43,80 +43,82 @@
   (+eterm+ 53)
   (+emthread+ 54))
 
-(defmacro kwsym->special (kwsym)
-  `(intern (concatenate 'string "+"
-			(symbol-name ,kwsym) "+")))
-
-(defmacro find-kwsym-special (kwsym)
-  `(find-symbol (concatenate 'string "+"
-			     (symbol-name ,kwsym) "+")))
-
-(defmacro define-sequence (&body symbols)
+(defmacro define-socket-types (socket-name-constant-pairs)
   `(progn
-     ,@(loop :for symbol :in symbols
-	     :for count :from 0
-	     :collect (if (consp symbol)
-			  (list 'defparameter
-				(kwsym->special (first symbol))
-				(setf count (second symbol)))
-			  (list 'defparameter
-				(kwsym->special symbol)
-				count)))))
+     ,@(loop :for socket-pair :in socket-name-constant-pairs
+	     :collect
+	     `(defmethod make-socket (ctx (type (eql ,(first socket-pair))) &rest parameters)
+		(declare (inline make-zmq-socket))
+		(make-zmq-socket ctx ,(second socket-pair) parameters)))))
 
-(defun kwsym-value (kwsym)
-  (declare (inline kwsym-value))
-  (symbol-value (find-symbol (concatenate 'string "+"
-					  (symbol-name kwsym) "+")
-			     'zmq-bindings)))
-
-(define-sequence
-  :pair
-  :pub
-  :sub
-  :req
-  :rep
-  :dealer
-  :router
-  :pull
-  :push
-  :xpub
-  :xsub)
-
+(define-socket-types
+    ((:pair 0)
+     (:pub 1)
+     (:sub 2)
+     (:req 3)
+     (:rep 4)
+     (:dealer 5)
+     (:router 6)
+     (:pull 7)
+     (:push 8)
+     (:xpub 9)
+     (:xsub 10)))
 
 (defmacro make-setter (option-name enum type)
-  `(defmethod (setf ,option-name) (value (socket socket))     
-     ,(cond
-	((eq type :string)
-	 `(cffi:with-foreign-string (string value)
-	    (setsockopt (slot-value socket 'ptr) ,enum string (length value))))
-	(t
-	 `(cffi:with-foreign-object (ptr ,type)
-	    (setf (cffi:mem-aref ptr ,type) value)
-	    (setsockopt (slot-value socket 'ptr) ,enum ptr
-			(cffi:foreign-type-size ,type)))))
-     value))
+  (cond
+    ((eq type :binary)
+     `(progn
+	(defmethod (setf ,option-name) ((value string) (socket socket))
+	  (cffi:with-foreign-string (string value)
+	    (setsockopt (slot-value socket 'ptr) ,enum string (length value)))
+	  value)
+	(defmethod (setf ,option-name) ((value vector) (socket socket))
+	  (declare (cl:type (vector (unsigned-byte 8) *) value))
+	  (cffi:with-foreign-object (ptr :char (length value))
+	    (loop :for octet :across value
+		  :for index :from 0
+		  :do
+		  (setf (cffi:mem-aref ptr :char index) octet))
+	    (setsockopt (slot-value socket 'ptr) ,enum ptr (length value)))
+	  value)))
+    (t      
+     `(defmethod (setf ,option-name) (value (socket socket))
+	(cffi:with-foreign-object (ptr ,type)
+	  (setf (cffi:mem-aref ptr ,type) value)
+	  (setsockopt (slot-value socket 'ptr) ,enum ptr
+		      (cffi:foreign-type-size ,type)))
+	value))))
 
 (defmacro make-getter (option-name enum type)
-  `(defmethod ,option-name
-     ((socket socket))
-     (cffi:with-foreign-pointer (val ,(if (eq :string type)
-					  255
-					  (cffi:foreign-type-size type))
-				     val-size)
-       (cffi:with-foreign-pointer (len ,(cffi:foreign-type-size 'size-t))
-	 ,(cond
-	    ((eq type :string)
-	     `(progn
-		(setf (cffi:mem-aref len 'size-t) val-size)
-		(getsockopt (slot-value socket 'ptr) ,enum val len)		
-		(cffi:foreign-string-to-lisp
-		 val :count (cffi:mem-aref len 'size-t))))
-	    (t
-	     `(progn
-		(setf (cffi:mem-aref len :long) val-size
-		      (cffi:mem-aref val ,type) 0)
-		(getsockopt (slot-value socket 'ptr) ,enum val len)
-		(cffi:mem-aref val ,type))))))))
+  (cond    
+    ((eq :binary type)
+     `(defmethod ,option-name ((socket socket) &key (as :octets))
+	(cffi:with-foreign-pointer (val 255 val-size)
+	  (cffi:with-foreign-pointer (len ,(cffi:foreign-type-size 'size-t))
+	    (setf (cffi:mem-aref len 'size-t) val-size)
+	    (getsockopt (slot-value socket 'ptr) ,enum val len)	    
+	    (let ((count (cffi:mem-aref len 'size-t)))
+	      (ecase as
+		(:octets
+		 (make-array count
+			     :element-type '(unsigned-byte 8)
+			     :initial-contents
+			     (loop :for index :from 0 :below count
+				   :collect
+				   (cffi:mem-aref val :char index))))
+		(:string
+		 (cffi:foreign-string-to-lisp val :count count))))))))
+    (t
+     `(defmethod ,option-name ((socket socket))
+	(cffi:with-foreign-pointer (val ,(cffi:foreign-type-size type)
+					val-size)
+	  (cffi:with-foreign-pointer (len ,(cffi:foreign-type-size 'size-t))
+	    (setf (cffi:mem-aref len 'size-t) val-size)
+	    (getsockopt (slot-value socket 'ptr) ,enum val len)
+	    (setf (cffi:mem-aref len :long) val-size
+		  (cffi:mem-aref val ,type) 0)
+	    (getsockopt (slot-value socket 'ptr) ,enum val len)
+	    (cffi:mem-aref val ,type)))))))
 
 (defmacro define-socket
     (options)
@@ -124,8 +126,7 @@
      (defclass socket ()
        ,(append
 	 (loop :for option :in options
-	       :collect `(,(first option)
-			  :accessor ,(first option)))
+	       :collect `(,(first option)))
 	 (list '(ptr))))
      ,@(loop :for option :in options
 	     :append `(,(when (member :get option)
@@ -135,54 +136,86 @@
 		       ,(when (member :set option)
 			  (macroexpand-1 `(make-setter ,(first option)
 						       ,(second option)
-						       ,(third option))))))))
+						       ,(third option))))))
+     (defmethod initialize-instance ((socket socket)
+				     &key
+				       bind connect
+				       ,@(loop :for option :in options
+					       :append (when (member :init option)
+							 (if (eq :boolean (third option))
+							     (list `(,(first option) :default))
+							     (list (first option))))))
+       ,@(loop :for option :in options
+	       :append (when (member :init option)
+			 (list (if (eq :boolean (third option))
+				   `(unless (eq ,(first option) :default)
+				      (setf (,(first option) socket) ,(first option)))
+				   `(when ,(first option)				   
+				      (setf (,(first option) socket) ,(first option)))))))
+       (with-slots ((ptr ptr))
+	   socket
+	 (when bind
+	   (mapcar (lambda (addr)
+		     (bind ptr addr))
+		   (alexandria:ensure-list bind)))
+	 (when connect
+	   (mapcar (lambda (addr)
+		     (connect ptr addr))
+		   (alexandria:ensure-list connect)))))))
 
 (define-socket
-    ((affinity 4 :uint64 :get :set)
-     (identity 5 :string :get :set)
-     (subscribe 6 :string :set)
-     (unsubscribe 7 :string :set)
-     (rate 8 :int :get :set)
-     (recovery-ivl 9 :int :get :set)
-     (sndbuf 11 :int :get :set)
-     (rcvbuf 12 :int :get :set)
+    ((affinity 4 :uint64 :get :set :init)
+     (identity 5 :binary :get :set :init)
+     (subscribe 6 :binary :set)
+     (unsubscribe 7 :binary :set)
+     (rate 8 :int :get :set :init)
+     (recovery-ivl 9 :int :get :set :init)
+     (sndbuf 11 :int :get :set :init)
+     (rcvbuf 12 :int :get :set :init)
      (rcvmore 13 :boolean :get)
      (fd 14 :int :get)
      (events 15 :int :get)
      (type 16 :int :get)
      (linger 17 :int :get :set)
-     (reconnect-ivl 18 :int :get :set)
-     (backlog 19 :int :get :set)
-     (reconnect-ivl-max 21 :int :get :set)
-     (maxmsgsize 22 :int64 :get :set)
-     (sndhwm 23 :int :get :set)
-     (rcvhwm 24 :int :get :set)
-     (multicast-hops 25 :int :get :set)
-     (rcvtimeo 27 :int :get :set)
-     (sndtimeo 28 :int :get :set)
-     (ipv4only 31 :boolean :get :set)))
+     (reconnect-ivl 18 :int :get :set :init)
+     (backlog 19 :int :get :set :init)
+     (reconnect-ivl-max 21 :int :get :set :init)
+     (maxmsgsize 22 :int64 :get :set :init)
+     (sndhwm 23 :int :get :set :init)
+     (rcvhwm 24 :int :get :set :init)
+     (multicast-hops 25 :int :get :set :init)
+     (rcvtimeo 27 :int :get :set :init)
+     (sndtimeo 28 :int :get :set :init)
+     (ipv4only 31 :boolean :get :set :init)))
+
+(defmethod (setf subscribe) ((value cons) (socket socket))
+  (loop :for sub :in value
+	:do
+	(setf (subscribe socket) sub))
+  value)
+
+(defmethod (setf unsubscribe) ((value cons) (socket socket))  
+  (loop :for unsub :in value
+	:do
+	(setf (unsubscribe socket) unsub))
+  value)
 
 (defmethod initialize-instance :before ((socket socket)
-					&key skt-ptr type context)
-  (if skt-ptr
-      (setf (slot-value socket 'ptr) skt-ptr)
-      (setf (slot-value socket 'ptr) (socket context type))))
+					&key type context)
+  (setf (slot-value socket 'ptr) (socket context type)))
 
-(defun make-socket (ctx type)
-  (make-instance 'socket :context ctx :type type))
+(defun make-zmq-socket (ctx type parameters)
+  (apply 'make-instance 'socket :context ctx :type type parameters)
+  #++(make-instance 'socket :context ctx :type type))
 
-(defun init-socket (skt-ptr)
-  (make-instance 'socket :skt-ptr skt-ptr))
 
 (defun close-socket (skt)
   (close (slot-value skt 'ptr)))
 
-(define-sequence
-  (:more 1))
+(defparameter +more+ 1)
 
-(define-sequence
-  (:dontwait 1)
-  :sndmore)
+(defparameter +dontwait+ 1)
+(defparameter +sndmore+ 2)
 
 (defmacro defcfun* (name-and-options return-type &body args)
   (let* ((c-name (car name-and-options))
@@ -215,16 +248,6 @@
 				  (error 'zmq-error
 					 :error-number errno))
 				,ret))))))))
-
-(cffi:defcallback cffi-free-fn :void ((data :pointer) (hint :pointer))
-  (declare (ignore hint))
-  (print "free")
-  #++(cffi:foreign-free data))
-
-(cffi:defcallback cffi-free-string-fn :void ((data :pointer) (hint :pointer))
-  (declare (ignore hint))
-  (print "free-string")
-  #++(cffi:foreign-string-free data))
 
 (cffi:defcfun ("zmq_errno" errno) :int)
 
@@ -333,10 +356,10 @@
 
 ;;; I/O Multiplexing
 
-(define-sequence
-  (:pollin 1)
-  (:pollout 2)
-  (:pollerr 4))
+
+(defparameter +pollin+ 1)
+(defparameter +pollout+ 2)
+(defparameter +pollerr+ 4)
 
 (cffi:defcstruct pollitem-t
 	(socket :pointer)

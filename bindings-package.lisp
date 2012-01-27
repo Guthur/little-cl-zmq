@@ -6,7 +6,6 @@
    #:init
    #:term
    #:make-socket
-   #:kwsym-value
    #:close-socket
    #:setsockopt
    #:getsockopt
@@ -43,7 +42,8 @@
    #:msg-move
    #:msg-copy
    #:msg-data
-   #:msg-size))
+   #:msg-size
+   #:make-zmq-socket))
 
 (in-package #:zmq-bindings)
 
