@@ -68,7 +68,7 @@
 		    &key (send-more nil) (eintr-retry t))
   (declare (type (boolean) send-more eintr-retry)
 	   (type %zmq::socket socket)
-	   (type (vector (unsigned-byte 8) *) data)
+	   (type (simple-array (unsigned-byte 8) (*)) data)
 	   (inline sendmsg))
   (with-message (msg data)
     (sendmsg socket msg :send-more send-more :eintr-retry eintr-retry)))
@@ -83,7 +83,7 @@
     (sendmsg socket msg :send-more send-more :eintr-retry eintr-retry)))
 
 (defmethod sendmsg ((socket %zmq::socket) (data message)
-		    &key (send-more nil) (eintr-retry t))
+		    &key send-more (eintr-retry t))
   (declare (type (boolean) send-more eintr-retry)
 	   (type %zmq::socket socket)
 	   (type message data)

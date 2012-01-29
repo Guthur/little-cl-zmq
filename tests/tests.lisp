@@ -63,8 +63,7 @@
     (zmq:with-socket (rep ctx :rep :connect "inproc://lat-test")
       (zmq:with-message (msg)
 	(dotimes (i message-count)
-	  (zmq:with-eintr-retry
-	      (zmq:sendmsg rep (zmq:recvmsg rep msg))))))))
+	  (zmq:sendmsg rep (zmq:recvmsg rep msg)))))))
 
 (defmacro with-stopwatch (&body body)
   (alexandria:with-gensyms (ips)
@@ -88,7 +87,7 @@
 	  (print (/ (/ (with-stopwatch
 			 (dotimes (x message-count)			 
 			   (zmq:sendmsg req msg)
-			   (setf msg (zmq:recvmsg req msg))))
+			   (zmq:recvmsg req msg)))
 		       1000)
 		    (* message-count 2.0))))))))
 

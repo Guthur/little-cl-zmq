@@ -297,8 +297,11 @@
 	   (when ,(if (eq return-type :pointer)
 		      '(cffi:null-pointer-p ret)
 		      '(< ret 0))
-	     (error 'zmq-error
-		    :error-number (errno)))
+	     (cond
+	       ((= +eintr+ (errno))
+		(signal 'zmq-eintr))
+	       (t (error 'zmq-error
+			 :error-number (errno)))))
 	   ret)))))
 
 (cffi:defcfun ("zmq_errno" errno) :int)
