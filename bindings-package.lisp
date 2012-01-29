@@ -1,7 +1,7 @@
 (defpackage #:zmq-bindings
   (:nicknames #:%zmq)
   (:use #:common-lisp)
-  (:shadow #:close #:type #:identity)
+  (:shadow #:close #:type #:identity #:push)
   (:export
    #:init
    #:term
@@ -43,7 +43,18 @@
    #:msg-copy
    #:msg-data
    #:msg-size
-   #:make-zmq-socket))
+   #:make-zmq-socket
+   #:pair 
+   #:pub 
+   #:sub
+   #:req
+   #:rep
+   #:dealer
+   #:router
+   #:pull
+   #:push
+   #:xpub
+   #:xsub))
 
 (in-package #:zmq-bindings)
 

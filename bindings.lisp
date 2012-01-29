@@ -9,7 +9,8 @@
   ((error-number :initarg :error-number
 		 :reader error-number))
   (:report (lambda (condition stream)
-	      (format stream "An error was raised on a ZMQ funcall.~%")	     
+	     (declare (cl:type stream stream))
+	      (format stream "An error was raised on a ZMQ funcall.~%")
 	      (format stream "Error string: ~a~%"
 		      (strerror (error-number condition))))))
 
@@ -22,6 +23,7 @@
 
 (defmacro define-error-numbers ((hausnumero)
 				&body errors)
+  (declare (cl:type fixnum hausnumero))
   `(progn ,@(loop :for error :in errors
 		  :collect (list 'defparameter
 				 (first error)
@@ -43,82 +45,68 @@
   (+eterm+ 53)
   (+emthread+ 54))
 
-(defmacro define-socket-types (socket-name-constant-pairs)
-  `(progn
-     ,@(loop :for socket-pair :in socket-name-constant-pairs
-	     :collect
-	     `(defmethod make-socket (ctx (type (eql ,(first socket-pair))) &rest parameters)
-		(declare (inline make-zmq-socket))
-		(make-zmq-socket ctx ,(second socket-pair) parameters)))))
-
-(define-socket-types
-    ((:pair 0)
-     (:pub 1)
-     (:sub 2)
-     (:req 3)
-     (:rep 4)
-     (:dealer 5)
-     (:router 6)
-     (:pull 7)
-     (:push 8)
-     (:xpub 9)
-     (:xsub 10)))
-
 (defmacro make-setter (option-name enum type)
-  (cond
-    ((eq type :binary)
-     `(progn
-	(defmethod (setf ,option-name) ((value string) (socket socket))
-	  (cffi:with-foreign-string (string value)
-	    (setsockopt (slot-value socket 'ptr) ,enum string (length value)))
-	  value)
-	(defmethod (setf ,option-name) ((value vector) (socket socket))
-	  (declare (cl:type (vector (unsigned-byte 8) *) value))
-	  (cffi:with-foreign-object (ptr :char (length value))
-	    (loop :for octet :across value
-		  :for index :from 0
-		  :do
-		  (setf (cffi:mem-aref ptr :char index) octet))
-	    (setsockopt (slot-value socket 'ptr) ,enum ptr (length value)))
-	  value)))
-    (t      
-     `(defmethod (setf ,option-name) (value (socket socket))
-	(cffi:with-foreign-object (ptr ,type)
-	  (setf (cffi:mem-aref ptr ,type) value)
-	  (setsockopt (slot-value socket 'ptr) ,enum ptr
-		      (cffi:foreign-type-size ,type)))
-	value))))
+  `(progn
+     (defgeneric (setf ,option-name) (value socket))
+     ,@(cond
+	((eq type :binary)	
+	 `((defmethod (setf ,option-name) ((value string) (socket socket))
+	     (cffi:with-foreign-string (string value)
+	       (setsockopt (slot-value socket 'ptr) ,enum string (length value)))
+	     value)
+	   (defmethod (setf ,option-name) ((value vector) (socket socket))
+	     (declare (cl:type (vector (unsigned-byte 8) *) value))
+	     (cffi:with-foreign-object (ptr :char (length value))
+	       (loop :for octet :across value
+		     :for index :from 0
+		     :do
+			(setf (cffi:mem-aref ptr :char index) octet))
+	       (setsockopt (slot-value socket 'ptr) ,enum ptr (length value)))
+	     value)))
+	(t
+	 `((defmethod (setf ,option-name) (value (socket socket))
+	     (cffi:with-foreign-object (ptr ,type)
+	       (setf (cffi:mem-aref ptr ,type) value)
+	       (setsockopt (slot-value socket 'ptr) ,enum ptr
+			   (cffi:foreign-type-size ,type)))
+	     value))))))
+
 
 (defmacro make-getter (option-name enum type)
-  (cond    
-    ((eq :binary type)
-     `(defmethod ,option-name ((socket socket) &key (as :octets))
-	(cffi:with-foreign-pointer (val 255 val-size)
-	  (cffi:with-foreign-pointer (len ,(cffi:foreign-type-size 'size-t))
-	    (setf (cffi:mem-aref len 'size-t) val-size)
-	    (getsockopt (slot-value socket 'ptr) ,enum val len)	    
-	    (let ((count (cffi:mem-aref len 'size-t)))
-	      (ecase as
-		(:octets
-		 (make-array count
-			     :element-type '(unsigned-byte 8)
-			     :initial-contents
-			     (loop :for index :from 0 :below count
-				   :collect
-				   (cffi:mem-aref val :char index))))
-		(:string
-		 (cffi:foreign-string-to-lisp val :count count))))))))
-    (t
-     `(defmethod ,option-name ((socket socket))
-	(cffi:with-foreign-pointer (val ,(cffi:foreign-type-size type)
-					val-size)
-	  (cffi:with-foreign-pointer (len ,(cffi:foreign-type-size 'size-t))
-	    (setf (cffi:mem-aref len 'size-t) val-size)
-	    (getsockopt (slot-value socket 'ptr) ,enum val len)
-	    (setf (cffi:mem-aref len :long) val-size
-		  (cffi:mem-aref val ,type) 0)
-	    (getsockopt (slot-value socket 'ptr) ,enum val len)
-	    (cffi:mem-aref val ,type)))))))
+  `(progn
+     ,@(cond
+	 ((eq :binary type)
+	  `((defgeneric ,option-name (socket &key as))
+	    (defmethod ,option-name ((socket socket) &key (as :octets))
+	      (cffi:with-foreign-pointer (val 255 val-size)
+		(cffi:with-foreign-pointer (len ,(cffi:foreign-type-size
+						  'size-t))
+		  (setf (cffi:mem-aref len 'size-t) val-size)
+		  (getsockopt (slot-value socket 'ptr) ,enum val len)
+		  (let ((count (cffi:mem-aref len 'size-t)))
+		    (ecase as
+		      (:octets
+		       (make-array count
+				   :element-type '(unsigned-byte 8)
+				   :initial-contents
+				   (loop :for index :from 0 :below count
+					 :collect
+					 (cffi:mem-aref val :char index))))
+		      (:string
+		       (cffi:foreign-string-to-lisp val :count count)))))))))
+	 (t
+	  `((defgeneric ,option-name (socket))
+	    (defmethod ,option-name ((socket socket))
+	      (cffi:with-foreign-pointer (val ,(cffi:foreign-type-size type)
+					      val-size)
+		(cffi:with-foreign-pointer (len ,(cffi:foreign-type-size
+						  'size-t))
+		  (setf (cffi:mem-aref len 'size-t) val-size)
+		  (getsockopt (slot-value socket 'ptr) ,enum val len)
+		  (setf (cffi:mem-aref len :long) val-size
+			(cffi:mem-aref val ,type) 0)
+		  (getsockopt (slot-value socket 'ptr) ,enum val len)
+		  (cffi:mem-aref val ,type)))))))))
 
 (defmacro define-socket
     (options)
@@ -137,21 +125,24 @@
 			  (macroexpand-1 `(make-setter ,(first option)
 						       ,(second option)
 						       ,(third option))))))
-     (defmethod initialize-instance ((socket socket)
-				     &key
-				       bind connect
-				       ,@(loop :for option :in options
-					       :append (when (member :init option)
-							 (if (eq :boolean (third option))
-							     (list `(,(first option) :default))
-							     (list (first option))))))
+     (defmethod initialize-instance
+	 ((socket socket)
+	  &key
+	    bind connect
+	    ,@(loop :for option :in options
+		    :append (when (member :init option)
+			      (if (eq :boolean (third option))
+				  (list `(,(first option) :default))
+				  (list (first option))))))
        ,@(loop :for option :in options
 	       :append (when (member :init option)
 			 (list (if (eq :boolean (third option))
 				   `(unless (eq ,(first option) :default)
-				      (setf (,(first option) socket) ,(first option)))
-				   `(when ,(first option)				   
-				      (setf (,(first option) socket) ,(first option)))))))
+				      (setf (,(first option) socket)
+					    ,(first option)))
+				   `(when ,(first option)
+				      (setf (,(first option) socket)
+					    ,(first option)))))))
        (with-slots ((ptr ptr))
 	   socket
 	 (when bind
@@ -188,25 +179,63 @@
      (sndtimeo 28 :int :get :set :init)
      (ipv4only 31 :boolean :get :set :init)))
 
+
 (defmethod (setf subscribe) ((value cons) (socket socket))
-  (loop :for sub :in value
-	:do
-	(setf (subscribe socket) sub))
+  (dolist (sub value)
+    (setf (subscribe socket) sub))
   value)
 
-(defmethod (setf unsubscribe) ((value cons) (socket socket))  
-  (loop :for unsub :in value
-	:do
-	(setf (unsubscribe socket) unsub))
+(defmethod (setf unsubscribe) ((value cons) (socket socket))
+  (dolist (unsub value)
+    (setf (unsubscribe socket) unsub))
   value)
 
 (defmethod initialize-instance :before ((socket socket)
 					&key type context)
   (setf (slot-value socket 'ptr) (socket context type)))
 
+(defmethod initialize-instance :after ((socket socket)
+				       &key subscribe linger)
+  (when linger
+    (setf (linger socket) linger))
+  (when subscribe
+    (setf (subscribe socket) subscribe)))
+
+
 (defun make-zmq-socket (ctx type parameters)
-  (apply 'make-instance 'socket :context ctx :type type parameters)
-  #++(make-instance 'socket :context ctx :type type))
+  (apply 'make-instance 'socket :context ctx :type type parameters))
+
+
+(defmacro define-socket-types (socket-name-constant-pairs)
+  `(progn
+     (defgeneric make-socket (context type &rest parameters))
+     ,@(loop :for socket-pair :in socket-name-constant-pairs
+	     :collect
+	     `(defmethod make-socket (ctx (type (eql ,(first socket-pair)))
+				      &rest parameters)
+		(declare (inline make-zmq-socket))
+		(change-class (make-zmq-socket ctx
+					       ,(second socket-pair)
+					       parameters)
+			      (quote
+			       ,(intern (symbol-name (first socket-pair)))))))
+     ,@(loop :for socket-pair :in socket-name-constant-pairs
+	     :collect
+	     `(defclass ,(intern (symbol-name (first socket-pair))) (socket)
+		()))))
+
+(define-socket-types
+    ((:pair 0)
+     (:pub 1)
+     (:sub 2)
+     (:req 3)
+     (:rep 4)
+     (:dealer 5)
+     (:router 6)
+     (:pull 7)
+     (:push 8)
+     (:xpub 9)
+     (:xsub 10)))
 
 
 (defun close-socket (skt)
@@ -217,7 +246,7 @@
 (defparameter +dontwait+ 1)
 (defparameter +sndmore+ 2)
 
-(defmacro defcfun* (name-and-options return-type &body args)
+#++(defmacro defcfun* (name-and-options return-type &body args)
   (let* ((c-name (car name-and-options))
          (l-name (cadr name-and-options))
          (n-name (cffi::format-symbol t "%~A" l-name))
@@ -238,7 +267,8 @@
 			(cffi:defcfun ,name ,return-type
 			  ,@args*)
 
-			(defun ,l-name (,@names ,@(when opts-init `(&optional ,@opts-init)))
+			(defun ,l-name (,@names ,@(when opts-init
+						    `(&optional ,@opts-init)))
 			  ,docstring
 			  (let ((,ret (,n-name ,@names ,@opts)))
 			    (if ,(if (eq return-type :pointer)
@@ -248,6 +278,28 @@
 				  (error 'zmq-error
 					 :error-number errno))
 				,ret))))))))
+
+(defmacro defcfun* (name-and-options return-type &body args)
+  (let* ((lisp-name (cadr name-and-options))
+	 (foreign-name (car name-and-options))
+	 (binding-lisp-name (concatenate 'string "%" (symbol-name lisp-name))))
+    `(progn
+       (cffi:defcfun (,foreign-name ,(intern binding-lisp-name)) ,return-type
+	 ,@args)
+       (defun ,lisp-name ,(loop :for arg :in args
+				:collect (car arg))
+	 (declare (inline ,lisp-name))
+	 (let ((ret (,(intern binding-lisp-name)
+		     ,@(loop :for arg :in args
+			     :collect (car arg)))))
+	   ,(when (eq return-type :int)
+	      '(declare (cl:type fixnum ret)))
+	   (when ,(if (eq return-type :pointer)
+		      '(cffi:null-pointer-p ret)
+		      '(< ret 0))
+	     (error 'zmq-error
+		    :error-number (errno)))
+	   ret)))))
 
 (cffi:defcfun ("zmq_errno" errno) :int)
 
@@ -283,7 +335,7 @@
   (dest :pointer msg-t)
   (src :pointer msg-t))
 
-(defcfun* ("zmq_msg_data" msg-data) :pointer
+(cffi:defcfun ("zmq_msg_data" msg-data) :pointer
   (msg :pointer msg-t))
 
 (defcfun* ("zmq_msg_size" msg-size) size-t
