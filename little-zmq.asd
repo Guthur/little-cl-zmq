@@ -7,13 +7,14 @@
   :serial t
   :depends-on (#:cffi
 	       #:alexandria)
-  :components ((:file "zmq-bindings-grovel")
-	       (cffi-grovel:grovel-file "grovel.spec")
-	       (:file "bindings")	       
-	       (:file "socket")
-	       (:file "message")
-	       (:file "poll")
-               (:file "little-zmq")))
+  :components ((:module src
+		:components ((:file "zmq-bindings-grovel")
+			     (cffi-grovel:grovel-file "grovel.spec")
+			     (:file "bindings")	       
+			     (:file "socket")
+			     (:file "message")
+			     (:file "poll")
+			     (:file "little-zmq")))))
 
 (asdf:defsystem #:little-zmq.devices
   :depends-on (#:little-zmq)
