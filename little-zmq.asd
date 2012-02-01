@@ -7,11 +7,10 @@
   :serial t
   :depends-on (#:cffi
 	       #:alexandria)
-  :components ((:file "bindings-package")
+  :components ((:file "zmq-bindings-grovel")
 	       (cffi-grovel:grovel-file "grovel.spec")
-	       (:file "bindings")
-	       (:file "package")
-	       (:file "misc")
+	       (:file "bindings")	       
+	       (:file "socket")
 	       (:file "message")
 	       (:file "poll")
                (:file "little-zmq")))
@@ -20,13 +19,14 @@
   :depends-on (#:little-zmq)
   :components ((:file "devices/standard-devices")))
 
-(asdf:defsystem #:little-zmq.zguide-examples
+#++(asdf:defsystem #:little-zmq.zguide-examples
   :depends-on (#:bordeaux-threads #:little-zmq)
-  :components ((:file "zguide/package")
-	       (:file "zguide/chapter3")))
+  :components ((:file "zguide/package")))
 
 (asdf:defsystem #:little-zmq.tests
+  :serial t
   :depends-on (#:bordeaux-threads
 	       #:little-zmq
 	       #:flexi-streams)
-  :components ((:file "tests/tests")))
+  :components ((:file "tests/util")
+	       (:file "tests/perf")))

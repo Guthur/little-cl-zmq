@@ -2,7 +2,7 @@
 (include "stddef.h")
 
 (progn
-  (in-package #:zmq-bindings)
+  (in-package #:zmq-bindings-grovel)
   
   (constant (+eintr+ "EINTR"))
   (constant (+einval+ "EINVAL"))

@@ -6,6 +6,9 @@
 
 (in-package #:standard-devices)
 
+(defgeneric make-device (frontend backend)
+  (:documentation "Make standard devices."))
+
 (defmethod make-device ((frontend zmq:dealer) (backend zmq:router))
   (%make-device frontend backend))
 

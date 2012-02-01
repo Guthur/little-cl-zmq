@@ -1,12 +1,20 @@
-(in-package #:little-zmq)
+(defpackage #:poll
+  (:documentation "Socket Poll API")
+  (:use #:common-lisp #:socket)
+  (:export
+   #:poll   
+   #:has-events-p
+   #:with-poll-list))
+
+(in-package #:poll)
 
 (defgeneric set-events (socket poll-item-ptr &rest events))
 
-(defmethod set-events ((socket %zmq::socket) poll-item-ptr &rest events)
+(defmethod set-events ((socket socket) poll-item-ptr &rest events)
   (cffi:with-foreign-slots ((%zmq::socket %zmq::events)
 			    poll-item-ptr
 			    %zmq::pollitem-t)
-    (setf %zmq::socket (slot-value socket '%zmq::ptr)
+    (setf socket (slot-value socket '%zmq::ptr)
 	  %zmq::events (+ (if (member :pollin events) %zmq::+pollin+ 0)
 			  (if (member :pollout events) %zmq::+pollout+ 0)
 			  (if (member :pollerr events) %zmq::+pollerr+ 0)))))
@@ -40,12 +48,12 @@
     :reader poll-count)))
 
 (defun poll (poll-list &optional (timeout -1) (eintr-retry t))
-  (with-eintr-retry eintr-retry
-    (let ((evts (%zmq::poll (poll-items poll-list)
-			    (poll-count poll-list)
-			    timeout)))
-      (unless (zerop evts)
-	(values evts)))))
+  (let ((evts (%zmq:with-eintr-retry eintr-retry
+		  (%zmq::poll (poll-items poll-list)
+			      (poll-count poll-list)
+			      timeout))))
+    (unless (zerop evts)
+      (values evts))))
 
 (defmacro with-poll-list ((symbol &rest poll-items) &body body)
   (alexandria:with-gensyms (poll-array)
