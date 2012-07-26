@@ -3,6 +3,7 @@
   (:use #:cl #:message #:poll #:socket)
   (:nicknames #:zmq)
   (:shadowing-import-from #:socket #:push #:identity)
+  (:import-from #:%zmq #:version)
   (:export
    #:with-context
    #:with-eintr-retry
@@ -25,7 +26,11 @@
    #:with-socket
    #:size
    #:msg-t
-   #:msg-t-ptr))
+   #:msg-t-ptr
+   #:version
+   #:subscribe
+   #:data
+   #:string-message))
 
 (in-package #:little-zmq)
 

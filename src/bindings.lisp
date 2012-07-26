@@ -6,7 +6,8 @@
   (:use #:common-lisp #:zmq-bindings-grovel)
   (:shadow #:close)
   (:export
-   #:with-eintr-retry))
+   #:with-eintr-retry
+   #:version))
 
 (in-package #:zmq-bindings)
 

@@ -19,7 +19,8 @@
    #:with-socket
    #:with-sockets
    #:bind
-   #:connect))
+   #:connect
+   #:subscribe))
 
 (in-package #:socket)
 
@@ -96,40 +97,51 @@
      (defclass socket ()
        ,(append
 	 (loop :for option :in options
-	       :collect `(,(first (car option))))
+	  :collect `(,(caar option)))
 	 (list '(ptr))))
      ,@(loop :for option :in options
-	     :append
-	     (let ((parameters (car option))
-		   (doc (cdr option)))
-	       `(,(when (member :get parameters)
-		    (macroexpand-1 `(make-getter ,(first parameters)
-						 ,(second parameters)
-						 ,(third parameters)
-						 ,doc)))
-		 ,(when (member :set parameters)
-		    (macroexpand-1 `(make-setter ,(first parameters)
-						 ,(second parameters)
-						 ,(third parameters)
-						 ,doc))))))
+	:append
+	(let* ((name (caar option))
+	       (option-values (cdar option))
+	       (doc (cdr option))
+	       (id (getf option-values :id))
+	       (type (getf option-values :type))
+	       (protocol (alexandria:ensure-list
+			  (getf option-values :protocol '(:get :set :init)))))
+	  `(,(when (member :get protocol)
+		   (macroexpand-1 `(make-getter ,name ,id ,type ,doc)))
+	     ,(when (member :set protocol)
+		    (macroexpand-1 `(make-setter ,name ,id ,type ,doc))))))
      (defmethod initialize-instance
 	 ((socket socket)
 	  &key
-	    bind connect
-	    ,@(loop :for option :in options
-		    :append (when (member :init (car option))
-			      (if (eq :boolean (third (car option)))
-				  (list `(,(first (car option)) :default))
-				  (list (first (car option)))))))
+	  bind connect
+	  ,@(loop :for option :in options
+	     :append
+	     (let* ((name (caar option))
+		    (option-values (cdar option))
+		    (type (getf option-values :type))
+		    (protocol (alexandria:ensure-list
+			       (getf option-values :protocol
+				     '(:get :set :init)))))
+	       (when (member :init protocol)
+		 (if (eq :boolean type)
+		     (list `(,name :default))
+		     (list name))))))
        ,@(loop :for option :in options
-	       :append (when (member :init (car option))
-			 (list (if (eq :boolean (third (car option)))
-				   `(unless (eq ,(first (car option)) :default)
-				      (setf (,(first (car option)) socket)
-					    ,(first (car option))))
-				   `(when ,(first (car option))
-				      (setf (,(first (car option)) socket)
-					    ,(first (car option))))))))
+	  :append
+	  (let* ((name (caar option))
+		 (option-values (cdar option))
+		 (type (getf option-values :type))
+		 (protocol (alexandria:ensure-list
+			    (getf option-values :protocol
+				  '(:get :set :init)))))
+	    (when (member :init protocol)
+	      (list (if (eq :boolean type)
+			`(unless (eq ,name :default)
+			   (setf (,name socket) ,name))
+			`(when ,name
+			   (setf (,name socket)	,name)))))))
        (with-slots ((ptr ptr))
 	   socket
 	 (when bind
@@ -142,51 +154,81 @@
 		   (alexandria:ensure-list connect)))))))
 
 (define-socket
-    (((affinity 4 :uint64 :get :set :init)
+    (((affinity :id 4
+		:type :uint64)
       :documentation "ZMQ_AFFINITY socket option.")
-     ((identity 5 :binary :get :set :init)
+     ((identity :id 5
+		:type :binary)
       :documentation "ZMQ_IDENTITY socket option.")
-     ((subscribe 6 :binary :set)
+     ((subscribe :id 6
+		 :type :binary
+		 :protocol :set)
       :documentation "ZMQ_SUBSCRIBE socket option.")
-     ((unsubscribe 7 :binary :set)
+     ((unsubscribe :id 6
+		   :type :binary
+		   :protocol :set)
       :documentation "ZMQ_UNSUBSCRIBE socket option.")
-     ((rate 8 :int :get :set :init)
+     ((rate :id 8
+	    :type :int)
       :documentation "ZMQ_RATE socket option.")
-     ((recovery-ivl 9 :int :get :set :init)
+     ((recovery-ivl :id 9
+		    :type :int)
       :documentation "ZMQ_RECOVERY socket option.")
-     ((sndbuf 11 :int :get :set :init)
+     ((sndbuf :id 11
+	      :type :int)
       :documentation "ZMQ_SNDBUF socket option.")
-     ((rcvbuf 12 :int :get :set :init)
+     ((rcvbuf :id 12
+	      :type :int)
       :documentation "ZMQ_RCVBUF socket option.")
-     ((rcvmore 13 :boolean :get)
+     ((rcvmore :id 13
+	       :type :boolean
+	       :protocol :get)
       :documentation "ZMQ_RCVMORE socket option.")
-     ((fd 14 :int :get)
+     ((fd :id 14
+	  :type :int
+	  :protocol :get)
       :documentation "ZMQ_FD socket option.")
-     ((events 15 :int :get)
+     ((events :id 15
+	      :type :int
+	      :protocol :get)
       :documentation "ZMQ_EVENTS socket option.")
-     ((type 16 :int :get)
+     ((type :id 16
+	    :type :int
+	    :protocol :get)
       :documentation "ZMQ_TYPE socket option.")
-     ((linger 17 :int :get :set)
+     ((linger :id 17
+	      :type :int
+	      :protocol (:get :set))
       :documentation "ZMQ_LINGER socket option.")
-     ((reconnect-ivl 18 :int :get :set :init)
+     ((reconnect-ivl :id 18
+		     :type :int)
       :documentation "ZMQ_RECONNECT-IVL socket option.")
-     ((backlog 19 :int :get :set :init)
+     ((backlog :id 19
+	       :type :int)
       :documentation "ZMQ_BACKLOG socket option.")
-     ((reconnect-ivl-max 21 :int :get :set :init)
+     ((reconnect-ivl-max :id 21
+			 :type :int)
       :documentation "ZMQ_RECONNECT-IVL_MAX socket option.")
-     ((maxmsgsize 22 :int64 :get :set :init)
+     ((maxmsgsize :id 22
+		  :type :int64)
       :documentation "ZMQ_MAXMSGSIZE socket option.")
-     ((sndhwm 23 :int :get :set :init)
+     ((sndhwm :id 23
+	      :type :int)
       :documentation "ZMQ_SNDHWM socket option.")
-     ((rcvhwm 24 :int :get :set :init)
+     ((rcvhwm :id 24
+	      :type :int)
       :documentation "ZMQ_RCVHWM socket option.")
-     ((multicast-hops 25 :int :get :set :init)
+     ((multicast-hops :id 25
+		      :type :int)
       :documentation "ZMQ_MULTICAST-HOPS socket option.")
-     ((rcvtimeo 27 :int :get :set :init)
+     ((rcvtimeo :id 27
+		:type :int)
       :documentation "ZMQ_RCVTIMEO socket option.")
-     ((sndtimeo 28 :int :get :set :init)
+     ((sndtimeo :id 28
+		:type :int)
       :documentation "ZMQ_SNDTIMEO socket option.")
-     ((ipv4only 31 :boolean :get :set :init)
+     ((ipv4only :id 31
+		:type :boolean)
       :documentation "ZMQ_IPV4ONLY socket option.")))
 
 
@@ -220,23 +262,21 @@
   `(progn
      (defgeneric make-socket (context type &rest parameters))
      ,@(loop :for socket-pair :in socket-name-constant-pairs
-	     :collect
-	     (let ((socket-pair (car socket-pair)))
-	       `(defmethod make-socket (ctx (type (eql ,(first socket-pair)))
-					&rest parameters)
-		  (declare (inline make-zmq-socket))
-		  (change-class (make-zmq-socket ctx
-						 ,(second socket-pair)
-						 parameters)
-				(quote
-				 ,(intern (symbol-name (first socket-pair))))))))     
+	:collect
+	(let ((socket-pair (car socket-pair)))
+	  `(defmethod make-socket (ctx (type (eql ,(first socket-pair)))
+				   &rest parameters)		  
+	     (change-class (make-zmq-socket ctx
+					    ,(second socket-pair)
+					    parameters)
+			   ',(intern (symbol-name (first socket-pair)))))))
      ,@(loop :for socket-pair :in socket-name-constant-pairs
-	     :collect
-	     (let ((doc (cdr socket-pair))
-		   (socket-pair (car socket-pair)))
-	       `(defclass ,(intern (symbol-name (first socket-pair))) (socket)
-		  ()
-		  ,doc)))))
+	:collect
+	(let ((doc (cdr socket-pair))
+	      (socket-pair (car socket-pair)))
+	  `(defclass ,(intern (symbol-name (first socket-pair))) (socket)
+	     ()
+	     ,doc)))))
 
 (define-socket-types
     (((:pair 0)
@@ -291,6 +331,9 @@ ZMQ API Reference: http://api.zeromq.org/3-1:zmq-socket#toc12")))
 
 (defmacro with-socket ((socket context type &rest parameters)
 		       &body body)
+  (when (keywordp type)
+    (unless (find-method #'make-socket nil `(t (eql ,type)) nil)
+      (error (format nil "Incorrect socket type specified (~s)~%" type))))
   `(let ((,socket (make-socket ,context ,type ,@parameters)))
      (unwind-protect
 	  (progn
@@ -313,4 +356,3 @@ ZMQ API Reference: http://api.zeromq.org/3-1:zmq-socket#toc12")))
   (declare (cl:type string address)
 	   (cl:type socket socket))
   (%zmq::connect (slot-value socket '%zmq::ptr) address))
-

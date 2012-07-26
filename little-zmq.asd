@@ -20,9 +20,9 @@
   :depends-on (#:little-zmq)
   :components ((:file "devices/standard-devices")))
 
-#++(asdf:defsystem #:little-zmq.zguide-examples
+(asdf:defsystem #:little-zmq.zguide-examples
   :depends-on (#:bordeaux-threads #:little-zmq)
-  :components ((:file "zguide/package")))
+  :components ((:file "zguide/chapter-1")))
 
 (asdf:defsystem #:little-zmq.tests
   :serial t
