@@ -9,5 +9,6 @@
   (constant (+emfile+ "EMFILE"))
   (constant (+efault+ "EFAULT"))
   (constant (+enodev+ "ENODEV"))
+  (constant (+eagain+ "EAGAIN"))
 
   (ctype size-t "size_t"))

@@ -7,7 +7,10 @@
   (:shadow #:close)
   (:export
    #:with-eintr-retry
-   #:version))
+   #:version
+   #:error-number
+   #:eagain))
+
 
 (in-package #:zmq-bindings)
 
@@ -21,6 +24,8 @@
 
 (declaim (optimize (speed 3)))
 
+;;;; ZMQ error conditions
+
 (define-condition zmq-error
     (error)
   ((error-number :initarg :error-number
@@ -29,7 +34,20 @@
 	     (declare (cl:type stream stream))
 	      (format stream "An error was raised on a ZMQ funcall.~%")
 	      (format stream "Error string: ~a~%"
-		      (strerror (error-number condition))))))
+		      (strerror (error-number condition)))))
+  (:documentation "Parent-type condition for all ZMQ error"))
+
+(define-condition eagain
+    (zmq-error)
+  ()
+  (:documentation "EAGAIN condition"))
+
+(defun raise-error (errno)
+  (declare (inline raise-error)
+	   (type fixnum errno))
+  (cond 
+    ((eq +eagain+ errno) (error 'eagain :error-number errno))
+    (t (error 'zmq-error :error-number errno))))
 
 ;;; EINTR Retry
 
@@ -108,8 +126,7 @@
 	   (when ,(if (eq return-type :pointer)
 		      '(cffi:null-pointer-p ret)
 		      '(< ret 0))
-	     (error 'zmq-error
-		    :error-number (errno)))
+	     (raise-error (errno)))
 	   ret)))))
 
 (defmacro defcfun+ (name-and-options return-type &body args)
@@ -136,7 +153,7 @@
 		  (declare (type fixnum err))
 		  (if (and eintr-retry (= +eintr+ err))
 		      (go retry)
-		      (error 'zmq-error :error-number err)))))
+		      (raise-error err)))))
 	   ret)))))
 
 (defun version ()

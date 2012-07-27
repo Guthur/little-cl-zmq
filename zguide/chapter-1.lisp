@@ -59,12 +59,19 @@
   (zmq:with-context (ctx)
     (zmq:with-socket (subscriber ctx :sub :connect "tcp://localhost:5556")
       (format t "Collecting updates from weather server...~%")
-      (setf (zmq:subscribe subscriber) "10001")
-      (zmq:with-message (msg)
+      (let ((filter "10001"))
+	(setf (zmq:subscribe subscriber) filter)
 	(loop
-	 :for update-number :below 100 :do
-	 (zmq:recvmsg subscriber msg :as 'zmq:string-message)
-	 (format t "~S~%" (zmq:data msg)))))))
+	 :for update-number :below 100
+	 :with total-temp = 0
+	 :do
+	 (destructuring-bind (zipcode temperature relhumidity)
+	     (ppcre:split " " (zmq:recvmsg subscriber :string))
+	   (declare (ignore zipcode relhumidity))
+	   (incf total-temp (read-from-string temperature)))
+	 :finally
+	 (format t "Average temperature for zipcode ~D was ~D"
+		 filter (/ total-temp update-number)))))))
 
 
 (defun run-weather-server ()
@@ -72,3 +79,58 @@
 				:name "Weather Server")))
     (weather-client)
     (bt:destroy-thread server)))
+
+(let ((out *standard-output*))
+  (defun taskwork ()
+    (zmq:with-context (ctx)
+      (zmq:with-sockets ((receiver ctx :pull :connect "tcp://localhost:5557")
+			 (sender ctx :push :connect "tcp://localhost:5558"))
+	(loop
+	 (let ((string (zmq:recvmsg receiver :string)))
+	   (format out "~A." string)
+	   (sleep (/ (read-from-string string) 1000.0))
+	   (zmq:sendmsg sender "")))))))
+
+(let ((out *standard-output*))
+  (defun tasksink ()
+    (zmq:with-context (ctx)
+      (zmq:with-socket (receiver ctx :pull :bind "tcp://*:5558")
+	(zmq:recvmsg receiver :string)
+	(loop
+	 :for task-number :below 100
+	 :with start-time = (get-internal-real-time)
+	 :do
+	 (zmq:recvmsg receiver :string)
+	 (if (zerop (mod task-number 10))
+	     (format out ":")
+	     (format out "."))
+	 :finally (format out "Total elapsed time: ~D msec~%"
+			  (- (get-internal-real-time) start-time)))))))
+
+(defun ventilator ()
+  (zmq:with-context (ctx)
+    (zmq:with-sockets ((sender ctx :push :bind "tcp://*:5557")
+		       (sink ctx :push :connect "tcp://localhost:5558"))
+      (format t "Press any key when the workers are ready: ~%")
+      (read-char)
+      (format t "Sending tasks to workers...~%")
+      (zmq:sendmsg sink "0")      
+      (loop
+       :for task-number :below 100
+       :with total-msec = 0 :do
+       (let ((workload (1+ (random 100))))
+	 (incf total-msec workload)
+	 (zmq:sendmsg sender (format nil "~D" workload)))
+       :finally (format t "Total expected cost: ~D msec~%" total-msec))
+      (sleep 1))))
+
+(defun run-parallel-pipeline (&optional (worker-count 1))
+  (let ((workers (loop
+		  :for count :below worker-count
+		  :collect (bt:make-thread #'taskwork
+					   :name (format nil "Worker-~D"
+							 (1+ count)))))
+	(sink (bt:make-thread #'tasksink :name "Sink")))
+    (ventilator)
+    (bt:join-thread sink)
+    (map nil #'bt:destroy-thread workers)))

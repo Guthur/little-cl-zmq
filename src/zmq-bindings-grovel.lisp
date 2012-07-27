@@ -6,4 +6,5 @@
    #:+einval+
    #:+emfile+
    #:+efault+
-   #:+enodev+))
+   #:+enodev+
+   #:+eagain+))

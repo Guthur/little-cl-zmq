@@ -3,7 +3,7 @@
   (:use #:cl #:message #:poll #:socket)
   (:nicknames #:zmq)
   (:shadowing-import-from #:socket #:push #:identity)
-  (:import-from #:%zmq #:version)
+  (:import-from #:%zmq #:version #:eagain #:error-number)
   (:export
    #:with-context
    #:with-eintr-retry
@@ -24,13 +24,16 @@
    #:poll
    #:has-events-p
    #:with-socket
+   #:with-sockets
    #:size
    #:msg-t
    #:msg-t-ptr
    #:version
    #:subscribe
    #:data
-   #:string-message))
+   #:string-message
+   #:error-number
+   #:eagain))
 
 (in-package #:little-zmq)
 

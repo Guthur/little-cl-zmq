@@ -21,8 +21,10 @@
   :components ((:file "devices/standard-devices")))
 
 (asdf:defsystem #:little-zmq.zguide-examples
-  :depends-on (#:bordeaux-threads #:little-zmq)
-  :components ((:file "zguide/chapter-1")))
+  :depends-on (#:bordeaux-threads #:little-zmq #:cl-ppcre)
+  :serial t
+  :components ((:file "zguide/chapter-1")
+	       (:file "zguide/chapter-2")))
 
 (asdf:defsystem #:little-zmq.tests
   :serial t
