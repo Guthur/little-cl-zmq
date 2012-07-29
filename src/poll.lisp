@@ -1,6 +1,6 @@
 (defpackage #:poll
   (:documentation "Socket Poll API")
-  (:use #:common-lisp #:socket)
+  (:use #:common-lisp)
   (:export
    #:poll   
    #:has-events-p
@@ -10,11 +10,11 @@
 
 (defgeneric set-events (socket poll-item-ptr &rest events))
 
-(defmethod set-events ((socket socket) poll-item-ptr &rest events)
+(defmethod set-events ((socket socket:socket) poll-item-ptr &rest events)
   (cffi:with-foreign-slots ((%zmq::socket %zmq::events)
 			    poll-item-ptr
 			    %zmq::pollitem-t)
-    (setf socket (slot-value socket '%zmq::ptr)
+    (setf %zmq::socket (slot-value socket 'socket:ptr)
 	  %zmq::events (+ (if (member :pollin events) %zmq::+pollin+ 0)
 			  (if (member :pollout events) %zmq::+pollout+ 0)
 			  (if (member :pollerr events) %zmq::+pollerr+ 0)))))
