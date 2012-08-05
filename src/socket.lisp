@@ -229,7 +229,31 @@
       :documentation "ZMQ_SNDTIMEO socket option.")
      ((ipv4only :id 31
                 :type :boolean)
-      :documentation "ZMQ_IPV4ONLY socket option.")))
+      :documentation "ZMQ_IPV4ONLY socket option.")
+     ((last-endpoint :id 32
+                     :type :binary
+                     :protocol :get)
+      :documentation "ZMQ_LAST_ENDPOINT: Retrieve the last endpoint set")
+     ((fail-unroutable :id 33
+                       :type :boolean
+                       :protocol (:set :init))
+      :documentation "ZMQ_FAIL_UNROUTABLE: Set unroutable message behavior")
+     ((tcp-keepalive :id 34
+                     :type :int)
+      :documentation "ZMQ_TCP_KEEPALIVE: Override SO_KEEPALIVE socket option")
+     ((tcp-keepalive-idle :id 35
+                          :type :int)
+      :documentation "ZMQ_TCP_KEEPALIVE_IDLE: Override TCP_KEEPCNT(or TCP_KEEPALIVE on some OS)")
+     ((tcp-keepalive-cnt :id 36
+                         :type :int)
+      :documentation "ZMQ_TCP_KEEPALIVE_CNT: Override TCP_KEEPCNT socket option")
+     ((tcp-keepalive-intvl :id 37
+                           :type :int)
+      :documentation "ZMQ_TCP_KEEPALIVE_INTVL: Override TCP_KEEPINTVL socket option")
+     ((tcp-accept-filter :id 38
+                         :type :binary
+                         :protocol (:set :init))
+      :documentation "ZMQ_TCP_ACCEPT_FILTER: Assign filters to allow new TCP connections")))
 
 
 (defmethod (setf subscribe) ((value cons) (socket socket))
@@ -242,9 +266,30 @@
     (setf (unsubscribe socket) unsub))
   value)
 
+
+(defmethod (setf tcp-keepalive) :before (value (socket socket))
+  (assert (<= -1 value 1) nil
+          "Incorrect option value - Socket option tcp-keepalive takes values -1, 0, 1"))
+
+(defmethod (setf tcp-keepalive-idle) :before (value (socket socket))
+  (assert (and (<= -1 value) (not (zerop value))) nil
+          "Incorrect option value - Socket option tcp-keepalive-idle takes values -1, >0"))
+
+(defmethod (setf tcp-keepalive-cnt) :before (value (socket socket))
+  (assert (and (<= -1 value) (not (zerop value))) nil
+          "Incorrect option value - Socket option tcp-keepalive-cnt takes values -1, >0"))
+
+(defmethod (setf tcp-keepalive-intvl) :before (value (socket socket))
+  (assert (and (<= -1 value) (not (zerop value))) nil
+          "Incorrect option value - Socket option tcp-keepalive-intvl takes values -1, >0"))
+
+(defmethod (setf fail-unroutable) :before (value (socket socket))
+  (assert (eq (class-of socket) (find-class 'router)) nil
+          "Incorrect socket type - Socket option fail-unroutable is only applicable to ROUTER sockets"))
+
 (defmethod initialize-instance :before ((socket socket)
                                         &key type context)
-  (setf (slot-value socket 'ptr) (%zmq::socket context type)))
+  (setf (slot-value socket 'ptr) (%zmq::socket (context:ptr context) type)))
 
 (defmethod initialize-instance :after ((socket socket)
                                        &key subscribe linger)

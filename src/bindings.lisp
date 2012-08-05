@@ -3,7 +3,8 @@
 (defpackage #:zmq-bindings
   (:documentation "Low level binding to ZeroMQ C API")
   (:nicknames #:%zmq)
-  (:use #:common-lisp #:zmq-bindings-grovel)
+  (:use #:common-lisp
+        #:zmq-bindings-grovel)
   (:shadow #:close)
   (:export
    #:with-eintr-retry
@@ -218,11 +219,31 @@
 
 ;;; ZMQ infrastructure
 
+;;; DEPRECATED
 (defcfun* ("zmq_init" init) :pointer
   (io_threads :int))
 
+;;; DEPRECATED
 (defcfun* ("zmq_term" term) :int
   (context :pointer))
+
+(defcfun* ("zmq_ctx_new" ctx-new) :pointer)
+
+(defcfun* ("zmq_ctx_destroy" ctx-destroy) :int
+  (context :pointer))
+
+(defcfun* ("zmq_ctx_get" ctx-get) :int
+  (context :pointer)
+  (option :int))
+
+(defcfun* ("zmq_ctx_set" ctx-set) :int
+  (context :pointer)
+  (option :int)
+  (value :int))
+
+(defcfun* ("zmq_ctx_set_monitor" ctx-set-monitor) :int
+  (context :pointer)
+  (monitor :pointer))
 
 ;;; ZMQ Socket Definition
 
@@ -299,5 +320,4 @@
   (dst :pointer)
   (src :pointer)
   (len size-t))
-
 

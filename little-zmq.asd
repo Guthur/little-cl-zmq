@@ -10,7 +10,8 @@
   :components ((:module src
                 :components ((:file "zmq-bindings-grovel")
                              (cffi-grovel:grovel-file "grovel.spec")
-                             (:file "bindings")        
+                             (:file "bindings")
+                             (:file "context")
                              (:file "socket")
                              (:file "message")
                              (:file "poll")
@@ -21,7 +22,9 @@
   :components ((:file "devices/standard-devices")))
 
 (asdf:defsystem #:little-zmq.zguide-examples
-  :depends-on (#:bordeaux-threads #:little-zmq #:cl-ppcre)
+  :depends-on (#:bordeaux-threads
+               #:little-zmq
+               #:cl-ppcre)
   :serial t
   :components ((:file "zguide/chapter-1")
                (:file "zguide/chapter-2")))

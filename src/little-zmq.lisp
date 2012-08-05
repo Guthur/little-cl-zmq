@@ -1,45 +1,54 @@
 (defpackage #:little-zmq
   (:documentation "Public API for little-zmq ZeroMQ Common Lisp Binding")
-  (:use #:cl #:message #:poll #:socket)
+  (:use #:cl
+        #:message
+        #:poll
+        #:socket)
   (:nicknames #:zmq)
-  (:shadowing-import-from #:socket #:push #:identity)
-  (:import-from #:%zmq #:version #:eagain #:error-number)
-  (:export
-   #:with-context
-   #:with-eintr-retry
-   #:sendmsg
-   #:recvmsg
-   #:rcvmore
-   #:dealer
-   #:router
-   #:pub
-   #:sub
-   #:push
-   #:pull
-   #:pair
-   #:req
-   #:rep
-   #:with-poll-list
-   #:with-message
-   #:poll
-   #:has-events-p
-   #:with-socket
-   #:with-sockets
-   #:size
-   #:msg-t
-   #:msg-t-ptr
-   #:version
-   #:subscribe
-   #:data
-   #:string-message
-   #:error-number
-   #:eagain))
+  (:shadowing-import-from #:socket
+                          #:push
+                          #:identity)
+  (:import-from #:%zmq
+                #:version
+                #:eagain
+                #:error-number)
+  (:import-from #:context
+		#:with-context)
+  (:export #:with-context
+           #:with-eintr-retry
+           #:sendmsg
+           #:recvmsg
+           #:rcvmore
+           #:dealer
+           #:router
+           #:pub
+           #:sub
+           #:push
+           #:pull
+           #:pair
+           #:req
+           #:rep
+           #:with-poll-list
+           #:with-message
+           #:poll
+           #:has-events-p
+           #:with-socket
+           #:with-sockets
+           #:size
+           #:msg-t
+           #:msg-t-ptr
+           #:version
+           #:subscribe
+           #:data
+           #:string-message
+           #:error-number
+           #:eagain))
 
 (in-package #:little-zmq)
 
 (declaim (optimize (speed 3)))
 
-(defmacro with-context ((ctx &optional (io-threads 1)) &body body)
+#++(defmacro with-context ((ctx &optional (io-threads 1)) &body body)
   `(let ((,ctx (%zmq::init ,io-threads)))
      (unwind-protect
           (progn
