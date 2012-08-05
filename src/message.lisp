@@ -46,7 +46,7 @@ Message Base Class. Can be use to access the raw data pointer"))
     data))
 
 (defmethod initialize-instance ((message message)
-				&key (size nil))
+                                &key (size nil))
   (declare (type (or fixnum null) size))
   (setf (slot-value message 'msg-t) (cffi:foreign-alloc '%zmq::msg-t))
   (cond
@@ -55,7 +55,7 @@ Message Base Class. Can be use to access the raw data pointer"))
     (t (%zmq::msg-init (msg-t-ptr message)))))
 
 (declaim (ftype (function (message) fixnum) size)
-	 (inline size))
+         (inline size))
 (defun size (msg)
   "Get message size in bytes"
   (%zmq::msg-size (msg-t-ptr msg)))
@@ -69,18 +69,18 @@ Message Base Class. Can be use to access the raw data pointer"))
     :initform '%zmq::cffi-free-fn)))
 
 (defmethod initialize-instance :around ((message zero-copy-message)
-					&key
-					  data
-					  size
-					  (free-fn (cffi:get-callback
-						    '%zmq::cffi-free-fn))
-					  hint)
+                                        &key
+                                          data
+                                          size
+                                          (free-fn (cffi:get-callback
+                                                    '%zmq::cffi-free-fn))
+                                          hint)
   (call-next-method message)
   (%zmq::msg-init-data (msg-t-ptr message)
-		       data
-		       size
-		       free-fn
-		       hint))
+                       data
+                       size
+                       free-fn
+                       hint))
 
 ;;; String Message
 
@@ -107,12 +107,12 @@ Message data as string"))
     data))
 
 (defmethod initialize-instance :around ((message string-message)
-					&key string)
+                                        &key string)
   (declare (type (string) string))
   (call-next-method message
-		    :size (1+ (length string)))
+                    :size (1+ (length string)))
   (cffi:lisp-string-to-foreign string (%zmq::msg-data (msg-t-ptr message))
-			       (1+ (length string))))
+                               (1+ (length string))))
 
 ;;; Octet Message
 
@@ -127,12 +127,12 @@ Message data as octets"))
   (with-slots ((msg-t msg-t))
       message
     (let ((len (%zmq::msg-size msg-t))
-	  (ptr (%zmq::msg-data msg-t)))
+          (ptr (%zmq::msg-data msg-t)))
       (declare (type fixnum len))
       (let ((array (make-array len :element-type '(unsigned-byte 8))))
-	(dotimes (index len)
-	  (setf (aref array index) (cffi:mem-aref ptr :uchar index)))
-	array))))
+        (dotimes (index len)
+          (setf (aref array index) (cffi:mem-aref ptr :uchar index)))
+        array))))
 
 (defmethod (setf data) ((data vector) (message message))
   "Set message data from octet array"
@@ -143,10 +143,10 @@ Message data as octets"))
       (%zmq::msg-close msg-t)
       (%zmq::msg-init-size msg-t len)
       (let ((ptr (%zmq::msg-data msg-t)))
-	(loop :for octet :across data
-	      :for index  fixnum :from 0 :below most-positive-fixnum
-	      :do
-	      (setf (cffi:mem-aref ptr :uchar index) octet)))
+        (loop :for octet :across data
+              :for index  fixnum :from 0 :below most-positive-fixnum
+              :do
+              (setf (cffi:mem-aref ptr :uchar index) octet)))
       data)))
 
 (defmethod initialize-instance :around ((message octet-message) &key octets)
@@ -154,9 +154,9 @@ Message data as octets"))
   (call-next-method message :size (length octets))
   (let ((ptr (%zmq::msg-data (msg-t-ptr message))))
     (loop :for octet :across octets
-	  :for index fixnum :from 0 :below most-positive-fixnum
-	  :do
-	  (setf (cffi:mem-aref ptr :uchar index) octet))))
+          :for index fixnum :from 0 :below most-positive-fixnum
+          :do
+          (setf (cffi:mem-aref ptr :uchar index) octet))))
 
 ;;; Message Cleanup
 (declaim (inline close-message))
@@ -204,7 +204,7 @@ Message data as octets"))
 (defun make-zero-copy-message (data size &optional hint)
   (declare (type fixnum size))
   (make-instance 'zero-copy-message
-		 :data data :size size :hint hint))
+                 :data data :size size :hint hint))
 
 (defmethod make-message ((data integer))
   (make-instance 'message :size data))
@@ -237,8 +237,8 @@ Binds a message object to symbol argument MSG setting with optional data DATA."
   `(let ((,msg (make-message ,data)))
      (declare (type message ,msg))
      (unwind-protect
-	  (progn
-	    ,@body)
+          (progn
+            ,@body)
        (destroy-message ,msg))))
 
 (defmacro with-messages (message-list &body body)
@@ -246,8 +246,8 @@ Binds a message object to symbol argument MSG setting with optional data DATA."
 Binds multi messages declared in lambda-lists of message-list in the form (MSG &optional DATA)"
   (if message-list
       `(with-message ,(car message-list)
-	 (with-messages ,(cdr message-list)
-	   ,@body))
+         (with-messages ,(cdr message-list)
+           ,@body))
       `(progn ,@body)))
 
 
@@ -273,4 +273,4 @@ Binds multi messages declared in lambda-lists of message-list in the form (MSG &
 
 (defun wrap (address msg-list)
   (append (list address) (append (list (make-message 0))
-				 (alexandria:ensure-list msg-list))))
+                                 (alexandria:ensure-list msg-list))))

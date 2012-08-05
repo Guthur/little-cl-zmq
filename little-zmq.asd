@@ -6,15 +6,15 @@
 (asdf:defsystem #:little-zmq
   :serial t
   :depends-on (#:cffi
-	       #:alexandria)
+               #:alexandria)
   :components ((:module src
-		:components ((:file "zmq-bindings-grovel")
-			     (cffi-grovel:grovel-file "grovel.spec")
-			     (:file "bindings")	       
-			     (:file "socket")
-			     (:file "message")
-			     (:file "poll")
-			     (:file "little-zmq")))))
+                :components ((:file "zmq-bindings-grovel")
+                             (cffi-grovel:grovel-file "grovel.spec")
+                             (:file "bindings")        
+                             (:file "socket")
+                             (:file "message")
+                             (:file "poll")
+                             (:file "little-zmq")))))
 
 (asdf:defsystem #:little-zmq.devices
   :depends-on (#:little-zmq)
@@ -24,12 +24,12 @@
   :depends-on (#:bordeaux-threads #:little-zmq #:cl-ppcre)
   :serial t
   :components ((:file "zguide/chapter-1")
-	       (:file "zguide/chapter-2")))
+               (:file "zguide/chapter-2")))
 
 (asdf:defsystem #:little-zmq.tests
   :serial t
   :depends-on (#:bordeaux-threads
-	       #:little-zmq
-	       #:flexi-streams)
+               #:little-zmq
+               #:flexi-streams)
   :components ((:file "tests/util")
-	       (:file "tests/perf")))
+               (:file "tests/perf")))

@@ -29,12 +29,12 @@
 (define-condition zmq-error
     (error)
   ((error-number :initarg :error-number
-		 :reader error-number))
+                 :reader error-number))
   (:report (lambda (condition stream)
-	     (declare (cl:type stream stream))
-	      (format stream "An error was raised on a ZMQ funcall.~%")
-	      (format stream "Error string: ~a~%"
-		      (strerror (error-number condition)))))
+             (declare (cl:type stream stream))
+              (format stream "An error was raised on a ZMQ funcall.~%")
+              (format stream "Error string: ~a~%"
+                      (strerror (error-number condition)))))
   (:documentation "Parent-type condition for all ZMQ error"))
 
 (define-condition eagain
@@ -44,7 +44,7 @@
 
 (defun raise-error (errno)
   (declare (inline raise-error)
-	   (type fixnum errno))
+           (type fixnum errno))
   (cond 
     ((eq +eagain+ errno) (error 'eagain :error-number errno))
     (t (error 'zmq-error :error-number errno))))
@@ -53,11 +53,11 @@
 
 (defun call-with-retry (predicate thunk)
   (declare (inline call-with-retry)
-	   (type (function nil) thunk)
-	   (type (function (error) boolean) predicate))
+           (type (function nil) thunk)
+           (type (function (error) boolean) predicate))
   (tagbody retry
      (return-from call-with-retry
-       (handler-bind ((t (lambda (condition)			   
+       (handler-bind ((t (lambda (condition)                       
                            (when (funcall predicate condition)
                              (go retry)))))
          (funcall thunk)))))
@@ -65,25 +65,25 @@
 (defmacro with-eintr-retry (&optional (active t) &body body)
   `(if ,active
        (call-with-retry
-	(lambda (condition)
-	  (and (typep condition '%zmq::zmq-error)
-	       (eql (%zmq::error-number condition)
-		    %zmq::+eintr+)))
-	(lambda ()
-	  ,@body))
+        (lambda (condition)
+          (and (typep condition '%zmq::zmq-error)
+               (eql (%zmq::error-number condition)
+                    %zmq::+eintr+)))
+        (lambda ()
+          ,@body))
        (progn
-	 ,@body)))
+         ,@body)))
 
 
 ;;;Error Numbers
 
 (defmacro define-error-numbers ((hausnumero)
-				&body errors)
+                                &body errors)
   (declare (cl:type fixnum hausnumero))
   `(progn ,@(loop :for (symbol number) (symbol fixnum) :in errors
-		  :collect (list 'defparameter
-				 symbol
-				 (+ hausnumero number)))))
+                  :collect (list 'defparameter
+                                 symbol
+                                 (+ hausnumero number)))))
 
 (define-error-numbers (156384712)
   (+enotsup+ 1)
@@ -109,61 +109,61 @@
 
 (defmacro defcfun* (name-and-options return-type &body args)
   (let* ((lisp-name (cadr name-and-options))
-	 (foreign-name (car name-and-options))
-	 (binding-lisp-name (concatenate 'string "%" (symbol-name lisp-name))))
+         (foreign-name (car name-and-options))
+         (binding-lisp-name (concatenate 'string "%" (symbol-name lisp-name))))
     `(progn
        (cffi:defcfun (,foreign-name ,(intern binding-lisp-name)) ,return-type
-	 ,@args)
+         ,@args)
        (declaim (inline ,lisp-name))
        (defun ,lisp-name ,(loop :for arg :in args
-				:collect (car arg))
-	 (let ((ret (,(intern binding-lisp-name)
-		      ,@(loop :for arg :in args
-			      :collect (car arg)))))
-	   ,(when (or (eq return-type :int)
-		      (eq return-type 'size-t))
-	      '(declare (cl:type fixnum ret)))
-	   (when ,(if (eq return-type :pointer)
-		      '(cffi:null-pointer-p ret)
-		      '(< ret 0))
-	     (raise-error (errno)))
-	   ret)))))
+                                :collect (car arg))
+         (let ((ret (,(intern binding-lisp-name)
+                      ,@(loop :for arg :in args
+                              :collect (car arg)))))
+           ,(when (or (eq return-type :int)
+                      (eq return-type 'size-t))
+              '(declare (cl:type fixnum ret)))
+           (when ,(if (eq return-type :pointer)
+                      '(cffi:null-pointer-p ret)
+                      '(< ret 0))
+             (raise-error (errno)))
+           ret)))))
 
 (defmacro defcfun+ (name-and-options return-type &body args)
   (let* ((lisp-name (cadr name-and-options))
-	 (foreign-name (car name-and-options))
-	 (binding-lisp-name (concatenate 'string "%" (symbol-name lisp-name))))
+         (foreign-name (car name-and-options))
+         (binding-lisp-name (concatenate 'string "%" (symbol-name lisp-name))))
     `(progn
        (cffi:defcfun (,foreign-name ,(intern binding-lisp-name)) ,return-type
-	 ,@args)       
+         ,@args)       
        (defun ,lisp-name ,(append (loop :for arg :in args
-					:collect (car arg))
-			   '(&optional eintr-retry))
-	 (let ((ret 0))
-	   (declare (type fixnum ret))
-	   (tagbody
-	    retry
-	      (setf ret (,(intern binding-lisp-name)
-			 ,@(loop :for arg :in args
-				 :collect (car arg))))	      
-	      (when ,(if (eq return-type :pointer)
-			 '(cffi:null-pointer-p ret)
-			 '(< ret 0))
-		(let ((err (errno)))
-		  (declare (type fixnum err))
-		  (if (and eintr-retry (= +eintr+ err))
-		      (go retry)
-		      (raise-error err)))))
-	   ret)))))
+                                        :collect (car arg))
+                           '(&optional eintr-retry))
+         (let ((ret 0))
+           (declare (type fixnum ret))
+           (tagbody
+            retry
+              (setf ret (,(intern binding-lisp-name)
+                         ,@(loop :for arg :in args
+                                 :collect (car arg))))        
+              (when ,(if (eq return-type :pointer)
+                         '(cffi:null-pointer-p ret)
+                         '(< ret 0))
+                (let ((err (errno)))
+                  (declare (type fixnum err))
+                  (if (and eintr-retry (= +eintr+ err))
+                      (go retry)
+                      (raise-error err)))))
+           ret)))))
 
 (defun version ()
   (cffi:with-foreign-objects ((major :int)
-			      (minor :int)
-			      (patch :int))
+                              (minor :int)
+                              (patch :int))
     (zmq_version major minor patch)
     (values (cffi:mem-aref major :int)
-	    (cffi:mem-aref minor :int)
-	    (cffi:mem-aref patch :int))))
+            (cffi:mem-aref minor :int)
+            (cffi:mem-aref patch :int))))
 
 (cffi:defcfun ("zmq_version" zmq_version) :void
   (major :pointer :int)
@@ -283,10 +283,10 @@
 (defparameter +pollerr+ 4)
 
 (cffi:defcstruct pollitem-t
-	(socket :pointer)
-	(fd :int)
-	(events :short)
-	(revents :short))
+        (socket :pointer)
+        (fd :int)
+        (events :short)
+        (revents :short))
 
 (defcfun* ("zmq_poll" poll) :int
   (items :pointer pollitem-t)
