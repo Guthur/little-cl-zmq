@@ -112,3 +112,54 @@
           :do
           (zmq:receive-message frontend msg)
           (zmq:send-message backend msg :send-more (zmq:rcvmore frontend))))))))
+
+(defun psenvpub ()
+  (zmq:with-context (ctx)
+    (zmq:with-socket (publisher ctx :pub :bind "tcp://*:5563")
+      (loop
+       (zmq:send-message publisher "A" :send-more t)
+       (zmq:send-message publisher "We don't want to see this")
+       (zmq:send-message publisher "B" :send-more t)
+       (zmq:send-message publisher "We would like to see this")
+       (sleep 1)))))
+
+(defun psenvsub ()
+  (zmq:with-context (ctx)
+    (zmq:with-socket (subscriber ctx :sub
+                                 :connect "tcp://localhost:5563"
+                                 :subscribe "B")
+      (loop
+       (let ((address (zmq:receive-message subscriber :string))
+             (contents (zmq:receive-message subscriber :string)))
+         (format t "[~A] ~A~%" address contents))))))
+
+(defun run-pspubsub ()
+  (let ((pub-thread (bt:make-thread #'psenvpub :name "PS Publisher")))
+    (unwind-protect
+         (psenvsub)
+      (bt:destroy-thread pub-thread))))
+
+(defun durapub ()
+  (zmq:with-context (ctx)
+    (zmq:with-sockets ((sync ctx :pull :bind "tcp://*:5564")
+                       (publisher ctx :pub :bind "tcp://*:5565"))
+      (zmq:receive-message sync :string)
+      (loop :for update-number :below 10 :do
+        (zmq:send-message publisher (format nil "Update ~a" update-number))
+        (sleep 1))
+      (zmq:send-message publisher "END"))))
+
+(defun durasub ()
+  (zmq:with-context (ctx)
+    (zmq:with-sockets ((subscriber ctx :sub
+                                   :connect "tcp://localhost:5565"
+                                   :subscribe ""
+                                   :identity "Hello")
+                       (sync ctx :push :connect "tcp://localhost:5564"))
+      (zmq:send-message sync "")
+      (loop
+        :for count :below 3
+        :as msg = (zmq:receive-message subscriber :string)
+        :do (format t "~a~%" msg)
+        :until (string= "END" msg)))))
+

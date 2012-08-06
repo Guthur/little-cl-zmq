@@ -41,6 +41,7 @@
            #:subscribe
            #:data
            #:string-message
+           #:octet-message
            #:error-number
            #:eagain))
 
@@ -99,10 +100,10 @@
   (declare (type (boolean) send-more eintr-retry)
            (type socket socket)
            (type message data))
-  (%zmq::send-message (slot-value socket 'ptr)
-                      (msg-t-ptr data)
-                      (if send-more %zmq::+sndmore+ 0)
-                      eintr-retry))
+  (%zmq::sendmsg (slot-value socket 'ptr)
+                 (msg-t-ptr data)
+                 (if send-more %zmq::+sndmore+ 0)
+                 eintr-retry))
 
 (defmethod send-message (socket (data function)
                          &key (send-more nil) (eintr-retry t))
@@ -131,12 +132,13 @@
            (type message message)
            (type (or null symbol) as)
            (type socket socket))
-  (%zmq::receive-message (slot-value socket 'ptr)
-                         (msg-t-ptr message)
-                         (if blocking 0 %zmq::+dontwait+)
-                         eintr-retry)
-  (when as (change-class message as))
-  message)
+  (let ((length (%zmq::recvmsg (slot-value socket 'ptr)
+                               (msg-t-ptr message)
+                               (if blocking 0 %zmq::+dontwait+)
+                               eintr-retry)))
+    (values
+     (if as (change-class message as) message)
+     length)))
 
 (defmethod receive-message (socket (message (eql :string))
                             &key (blocking t) as (eintr-retry t))
@@ -155,7 +157,6 @@
     (data (receive-message socket msg :as 'octet-message
                                       :blocking blocking
                                       :eintr-retry eintr-retry))))
-
 
 
 (defun make-message-future (socket &key (blocking t) (eintr-retry t))

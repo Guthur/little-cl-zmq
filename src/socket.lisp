@@ -29,43 +29,43 @@
 (defmacro make-setter (option-name enum type doc)
   `(progn
      (defgeneric (setf ,option-name) (value socket)
-        ,doc)
-      ,@(cond
-          ((eq type :binary)    
-           `((defmethod (setf ,option-name) ((value string) (socket socket))
-               (cffi:with-foreign-string (string value)
-                 (%zmq::setsockopt (slot-value socket 'ptr) ,enum string
+       ,doc)
+     ,@(cond
+         ((eq type :binary)    
+          `((defmethod (setf ,option-name) ((value string) (socket socket))
+              (cffi:with-foreign-string (string value)
+                (%zmq::setsockopt (slot-value socket 'ptr) ,enum string
+                                  (1+ (length value))))
+              value)
+            (defmethod (setf ,option-name) ((value vector) (socket socket))
+              (declare (cl:type (simple-array (unsigned-byte 8) (*)) value))
+              (cffi:with-foreign-object (ptr :char (length value))
+                (loop :for octet :across value
+                      :for index :from 0
+                      :do
+                         (setf (cffi:mem-aref ptr :char index) octet))
+                (%zmq::setsockopt (slot-value socket 'ptr) ,enum ptr
                                   (length value)))
-               value)
-             (defmethod (setf ,option-name) ((value vector) (socket socket))
-               (declare (cl:type (simple-array (unsigned-byte 8) (*)) value))
-               (cffi:with-foreign-object (ptr :char (length value))
-                 (loop :for octet :across value
-                       :for index :from 0
-                       :do
-                       (setf (cffi:mem-aref ptr :char index) octet))
-                 (%zmq::setsockopt (slot-value socket 'ptr) ,enum ptr
-                                   (length value)))
-               value)))
-          (t
-           `((defmethod (setf ,option-name) (value (socket socket))
-               (cffi:with-foreign-object (ptr ,type)
-                 (setf (cffi:mem-aref ptr ,type) value)
-                 (%zmq::setsockopt (slot-value socket 'ptr) ,enum ptr
+              value)))
+         (t
+          `((defmethod (setf ,option-name) (value (socket socket))
+              (cffi:with-foreign-object (ptr ,type)
+                (setf (cffi:mem-aref ptr ,type) value)
+                (%zmq::setsockopt (slot-value socket 'ptr) ,enum ptr
                                   (cffi:foreign-type-size ,type)))
-               value))))))
+              value))))))
 
 
- (defmacro make-getter (option-name enum type doc)
-   `(progn
-      ,@(cond
-          ((eq :binary type)
-           `((defgeneric ,option-name (socket &key as)
-               ,doc)
-             (defmethod ,option-name ((socket socket) &key (as :octets))
-               (cffi:with-foreign-pointer (val 255 val-size)
-                 (cffi:with-foreign-pointer (len ,(cffi:foreign-type-size
-                                                   '%zmq::size-t))
+(defmacro make-getter (option-name enum type doc)
+  `(progn
+     ,@(cond
+         ((eq :binary type)
+          `((defgeneric ,option-name (socket &key as)
+              ,doc)
+            (defmethod ,option-name ((socket socket) &key (as :octets))
+              (cffi:with-foreign-pointer (val 255 val-size)
+                (cffi:with-foreign-pointer (len ,(cffi:foreign-type-size
+                                                  '%zmq::size-t))
                   (setf (cffi:mem-aref len '%zmq::size-t) val-size)
                   (%zmq::getsockopt (slot-value socket 'ptr) ,enum val len)
                   (let ((count (cffi:mem-aref len '%zmq::size-t)))
@@ -97,51 +97,51 @@
      (defclass socket ()
        ,(append
          (loop :for option :in options
-          :collect `(,(caar option)))
+               :collect `(,(caar option)))
          (list '(ptr))))
      ,@(loop :for option :in options
-        :append
-        (let* ((name (caar option))
-               (option-values (cdar option))
-               (doc (cdr option))
-               (id (getf option-values :id))
-               (type (getf option-values :type))
-               (protocol (alexandria:ensure-list
-                          (getf option-values :protocol '(:get :set :init)))))
-          `(,(when (member :get protocol)
-                   (macroexpand-1 `(make-getter ,name ,id ,type ,doc)))
-             ,(when (member :set protocol)
+             :append
+             (let* ((name (caar option))
+                    (option-values (cdar option))
+                    (doc (cdr option))
+                    (id (getf option-values :id))
+                    (type (getf option-values :type))
+                    (protocol (alexandria:ensure-list
+                               (getf option-values :protocol '(:get :set :init)))))
+               `(,(when (member :get protocol)
+                    (macroexpand-1 `(make-getter ,name ,id ,type ,doc)))
+                 ,(when (member :set protocol)
                     (macroexpand-1 `(make-setter ,name ,id ,type ,doc))))))
      (defmethod initialize-instance
          ((socket socket)
           &key
-          bind connect
-          ,@(loop :for option :in options
-             :append
-             (let* ((name (caar option))
-                    (option-values (cdar option))
-                    (type (getf option-values :type))
-                    (protocol (alexandria:ensure-list
-                               (getf option-values :protocol
-                                     '(:get :set :init)))))
-               (when (member :init protocol)
-                 (if (eq :boolean type)
-                     (list `(,name :default))
-                     (list name))))))
+            bind connect
+            ,@(loop :for option :in options
+                    :append
+                    (let* ((name (caar option))
+                           (option-values (cdar option))
+                           (type (getf option-values :type))
+                           (protocol (alexandria:ensure-list
+                                      (getf option-values :protocol
+                                            '(:get :set :init)))))
+                      (when (member :init protocol)
+                        (if (eq :boolean type)
+                            (list `(,name :default))
+                            (list name))))))
        ,@(loop :for option :in options
-          :append
-          (let* ((name (caar option))
-                 (option-values (cdar option))
-                 (type (getf option-values :type))
-                 (protocol (alexandria:ensure-list
-                            (getf option-values :protocol
-                                  '(:get :set :init)))))
-            (when (member :init protocol)
-              (list (if (eq :boolean type)
-                        `(unless (eq ,name :default)
-                           (setf (,name socket) ,name))
-                        `(when ,name
-                           (setf (,name socket) ,name)))))))
+               :append
+               (let* ((name (caar option))
+                      (option-values (cdar option))
+                      (type (getf option-values :type))
+                      (protocol (alexandria:ensure-list
+                                 (getf option-values :protocol
+                                       '(:get :set :init)))))
+                 (when (member :init protocol)
+                   (list (if (eq :boolean type)
+                             `(unless (eq ,name :default)
+                                (setf (,name socket) ,name))
+                             `(when ,name
+                                (setf (,name socket) ,name)))))))
        (with-slots ((ptr ptr))
            socket
          (when bind
@@ -307,21 +307,21 @@
   `(progn
      (defgeneric make-socket (context type &rest parameters))
      ,@(loop :for socket-pair :in socket-name-constant-pairs
-        :collect
-        (let ((socket-pair (car socket-pair)))
-          `(defmethod make-socket (ctx (type (eql ,(first socket-pair)))
-                                   &rest parameters)              
-             (change-class (make-zmq-socket ctx
-                                            ,(second socket-pair)
-                                            parameters)
-                           ',(intern (symbol-name (first socket-pair)))))))
+             :collect
+             (let ((socket-pair (car socket-pair)))
+               `(defmethod make-socket (ctx (type (eql ,(first socket-pair)))
+                                        &rest parameters)              
+                  (change-class (make-zmq-socket ctx
+                                                 ,(second socket-pair)
+                                                 parameters)
+                                ',(intern (symbol-name (first socket-pair)))))))
      ,@(loop :for socket-pair :in socket-name-constant-pairs
-        :collect
-        (let ((doc (cdr socket-pair))
-              (socket-pair (car socket-pair)))
-          `(defclass ,(intern (symbol-name (first socket-pair))) (socket)
-             ()
-             ,doc)))))
+             :collect
+             (let ((doc (cdr socket-pair))
+                   (socket-pair (car socket-pair)))
+               `(defclass ,(intern (symbol-name (first socket-pair))) (socket)
+                  ()
+                  ,doc)))))
 
 (define-socket-types
     (((:pair 0)
@@ -365,7 +365,7 @@ ZMQ API Reference: http://api.zeromq.org/3-1:zmq-socket#toc14")
 Class precedence: socket
 ZMQ API Reference: http://api.zeromq.org/3-1:zmq-socket#toc11")
      ((:xsub 10)
-           :documentation "Class: xsub
+      :documentation "Class: xsub
 Class precedence: socket
 ZMQ API Reference: http://api.zeromq.org/3-1:zmq-socket#toc12")))
 

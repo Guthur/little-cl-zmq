@@ -27,7 +27,8 @@
                #:cl-ppcre)
   :serial t
   :components ((:file "zguide/chapter-1")
-               (:file "zguide/chapter-2")))
+               (:file "zguide/chapter-2")
+               (:file "zguide/chapter-3")))
 
 (asdf:defsystem #:little-zmq.tests
   :serial t

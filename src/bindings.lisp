@@ -80,10 +80,9 @@
 
 (defmacro define-error-numbers ((hausnumero)
                                 &body errors)
-  (declare (cl:type fixnum hausnumero))
-  `(progn ,@(loop :for (symbol number) (symbol fixnum) :in errors
+  `(progn ,@(loop :for (error-symbol number) :in errors
                   :collect (list 'defparameter
-                                 symbol
+                                 error-symbol
                                  (+ hausnumero number)))))
 
 (define-error-numbers (156384712)
