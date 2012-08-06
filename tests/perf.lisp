@@ -15,7 +15,7 @@
     (zmq:with-socket (rep ctx :rep :connect "inproc://lat-test")
       (zmq:with-message (msg)
         (dotimes (i message-count)
-          (zmq:sendmsg rep (zmq:recvmsg rep msg)))))))
+          (zmq:send-message rep (zmq:receive-message rep msg)))))))
 
 (defun inproc-lat (message-size message-count)
   (declare (type fixnum message-size message-count))
@@ -28,8 +28,8 @@
         (zmq:with-message (msg message-size)
           (print (/ (with-stopwatch
                       (dotimes (x message-count)                         
-                        (zmq:sendmsg req msg)
-                        (zmq:recvmsg req msg)
+                        (zmq:send-message req msg)
+                        (zmq:receive-message req msg)
                         (unless (eql (zmq:size msg) message-size)
                           (error "Incorrect message size"))))               
                     (* message-count 2.0))))))))
@@ -43,7 +43,7 @@
         (with-slots ((ptr little-zmq::msg-t))
             msg
           (dotimes (i message-count)      
-            (zmq:sendmsg push msg)
+            (zmq:send-message push msg)
             (%zmq::msg-init-size ptr message-size)))))))
 
 (defun inproc-thr (message-size message-count)
@@ -56,12 +56,12 @@
                      :name "worker")))
         (declare (ignore worker))
         (zmq:with-message (msg)
-          (zmq:recvmsg pull msg)
+          (zmq:receive-message pull msg)
           (let* ((elapsed
                    (with-stopwatch
                      (loop :for x fixnum :from 1 :below message-count
                            :do
-                           (zmq:recvmsg pull msg)
+                           (zmq:receive-message pull msg)
                            (unless (= (zmq:size msg) message-size)
                              (error "Incorrect message size")))))
                  (throughput (* (/ message-count elapsed) 1000000.0))

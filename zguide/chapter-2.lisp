@@ -19,7 +19,7 @@
                               #'(lambda (condition)
                                   (declare (ignore condition))
                                   (invoke-restart 'stop-processing))))
-                (zmq:recvmsg receiver msg :blocking nil))
+                (zmq:receive-message receiver msg :blocking nil))
             (stop-processing () (return))))
          (loop
           (restart-case
@@ -27,7 +27,7 @@
                               #'(lambda (condition)
                                   (declare (ignore condition))
                                   (invoke-restart 'stop-processing))))
-                (zmq:recvmsg subscriber msg :blocking nil))
+                (zmq:receive-message subscriber msg :blocking nil))
             (stop-processing () (return))))
          (sleep 1))))))
 
@@ -47,9 +47,9 @@
           (loop
            (when (zmq:poll poll-list)
              (when (zmq:has-events-p recv-item)
-               (zmq:recvmsg receiver msg))
+               (zmq:receive-message receiver msg))
              (when (zmq:has-events-p sub-item)
-               (zmq:recvmsg subscriber msg)))))))))
+               (zmq:receive-message subscriber msg)))))))))
 
 
 (let ((out *standard-output*))
@@ -65,9 +65,9 @@
             (loop
              (when (zmq:poll poll-list)
                (when (zmq:has-events-p recv)
-                 (zmq:recvmsg receiver msg :as 'zmq:string-message)
+                 (zmq:receive-message receiver msg :as 'zmq:string-message)
                  (sleep (/ (read-from-string (zmq:data msg)) 1000.0))
-                 (zmq:sendmsg sender msg))
+                 (zmq:send-message sender msg))
                (when (zmq:has-events-p control)
                  (return))))))))))
 
@@ -77,18 +77,18 @@
       (zmq:with-sockets ((receiver ctx :pull :bind "tcp://*:5558")
                          (controller ctx :pub :bind "tcp://*:5559"))
         (zmq:with-message (msg)
-          (zmq:recvmsg receiver msg)
+          (zmq:receive-message receiver msg)
           (loop
            :for task-number :below 100
            :with start-time = (get-internal-real-time)
            :do
-           (zmq:recvmsg receiver msg)
+           (zmq:receive-message receiver msg)
            (if (zerop (mod task-number 10))
                (format out ":")
                (format out "."))
            :finally (format out "Total elapsed time: ~d msec~%"
                             (- (get-internal-real-time) start-time))))
-        (zmq:sendmsg controller "KILL")))))
+        (zmq:send-message controller "KILL")))))
 
 
 (defun run-parallel-pipeline (&optional (worker-count 1))
@@ -110,5 +110,5 @@
         (loop
          (loop
           :do
-          (zmq:recvmsg frontend msg)
-          (zmq:sendmsg backend msg :send-more (zmq:rcvmore frontend))))))))
+          (zmq:receive-message frontend msg)
+          (zmq:send-message backend msg :send-more (zmq:rcvmore frontend))))))))
