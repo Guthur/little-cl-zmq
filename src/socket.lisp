@@ -36,7 +36,7 @@
           `((defmethod (setf ,option-name) ((value string) (socket socket))
               (cffi:with-foreign-string (string value)
                 (%zmq::setsockopt (slot-value socket 'ptr) ,enum string
-                                  (1+ (length value))))
+                                  (length value)))
               value)
             (defmethod (setf ,option-name) ((value vector) (socket socket))
               (declare (cl:type (simple-array (unsigned-byte 8) (*)) value))
