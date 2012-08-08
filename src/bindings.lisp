@@ -273,6 +273,10 @@
   (s :pointer)
   (addr :string))
 
+(defcfun* ("zmq_disconnect" disconnect) :int
+  (s :pointer)
+  (addr :string))
+
 (defcfun* ("zmq_send" send) :int
   (s :pointer)
   (buf :pointer)

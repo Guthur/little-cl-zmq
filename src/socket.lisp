@@ -20,6 +20,7 @@
    #:with-sockets
    #:bind
    #:connect
+   #:disconnect
    #:subscribe))
 
 (in-package #:socket)
@@ -401,3 +402,8 @@ ZMQ API Reference: http://api.zeromq.org/3-1:zmq-socket#toc12")))
   (declare (cl:type string address)
            (cl:type socket socket))
   (%zmq::connect (slot-value socket '%zmq::ptr) address))
+
+(defun disconnect (socket address)
+  (declare (cl:type string address)
+           (cl:type socket socket))
+  (%zmq::disconnect (slot-value socket '%zmq::ptr) address))

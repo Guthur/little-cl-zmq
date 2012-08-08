@@ -7,17 +7,23 @@
   (:nicknames #:zmq)
   (:shadowing-import-from #:socket
                           #:push
-                          #:identity)
+                          #:identity
+                          #:bind
+                          #:connect
+                          #:disconnect)
   (:import-from #:%zmq
                 #:version
                 #:eagain
                 #:error-number)
   (:import-from #:context
-		#:with-context)
+                #:with-context)
   (:export #:with-context
            #:with-eintr-retry
            #:send-message
            #:receive-message
+           #:bind
+           #:connect
+           #:disconnect
            #:rcvmore
            #:dealer
            #:router
