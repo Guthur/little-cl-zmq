@@ -7,10 +7,7 @@
   (:nicknames #:zmq)
   (:shadowing-import-from #:socket
                           #:push
-                          #:identity
-                          #:bind
-                          #:connect
-                          #:disconnect)
+                          #:identity)
   (:import-from #:%zmq
                 #:version
                 #:eagain
@@ -49,7 +46,14 @@
            #:string-message
            #:octet-message
            #:error-number
-           #:eagain))
+           #:eagain
+           #:bind
+           #:connect
+           #:disconnect
+           #:make-poll-item
+           #:events
+           #:poll-items
+           #:revents))
 
 (in-package #:little-zmq)
 

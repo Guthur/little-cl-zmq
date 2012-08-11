@@ -4,30 +4,13 @@
   (:export
    #:poll   
    #:has-events-p
-   #:with-poll-list))
+   #:with-poll-list
+   #:make-poll-item
+   #:events
+   #:revents
+   #:poll-items))
 
 (in-package #:poll)
-
-#++(defgeneric set-events (socket poll-item-ptr &rest events))
-
-#++(defmethod set-events ((socket socket:socket) poll-item-ptr &rest events)
-     (cffi:with-foreign-slots ((%zmq::socket %zmq::events)
-                            poll-item-ptr
-                            %zmq::pollitem-t)
-    (setf %zmq::socket (slot-value socket 'socket:ptr)
-          %zmq::events (+ (if (member :pollin events) %zmq::+pollin+ 0)
-                          (if (member :pollout events) %zmq::+pollout+ 0)
-                          (if (member :pollerr events) %zmq::+pollerr+ 0)))))
-
-#++(defmethod set-events ((fd t) poll-item-ptr &rest events)
-  (cffi:with-foreign-slots ((%zmq::fd %zmq::events)
-                            poll-item-ptr
-                            %zmq::pollitem-t)
-    (setf %zmq::fd fd)
-    (setf %zmq::events (+ (if (member :pollin events) %zmq::+pollin+ 0)
-                          (if (member :pollout events) %zmq::+pollout+ 0)
-                          (if (member :pollerr events) %zmq::+pollerr+ 0)))))
-
 
 (defun set-events (poll-item)
   (with-slots ((socket socket)
@@ -57,7 +40,8 @@
 (defclass poll-item ()
   ((socket :initarg :socket
            :reader socket)
-   (events :initarg :events)
+   (events :initarg :events
+           :accessor events)
    (revents :reader revents)
    (poll-item-ptr)))
 
@@ -73,28 +57,38 @@
   (make-instance 'poll-item :socket socket :events events))
 
 (defclass poll-list ()
-  ((poll-items)
-   (poll-array :initform (cffi:foreign-alloc '%zmq::pollitem-t :count 8))
+  ((poll-items :accessor poll-items)
+   (poll-array-size :initform 8)
+   (poll-array)
    (poll-count :reader poll-count
                :initform 0)))
 
 (defmethod (setf poll-items) (value (poll-list poll-list))
   (with-slots ((poll-array poll-array)
                (poll-count poll-count)
+               (poll-array-size poll-array-size)
                (poll-items poll-items))
       poll-list
+    (when (> (length poll-list) poll-array-size)
+      (cffi:foreign-free poll-array)
+      (setf poll-array-size (* poll-array-size 2)
+            poll-array (cffi:foreign-alloc '%zmq::pollitem-t
+                                           :count poll-array-size)))
     (loop
-     :for poll-item :in (alexandria:ensure-list value)
-     :for index :from 0
-     :as poll-item-ptr = (cffi:mem-aref poll-array '%zmq::pollitem-t index)
-     :do
-     (setf (slot-value poll-item 'poll-item-ptr) poll-item-ptr)
-     (set-events poll-item)     
-     :finally (setf poll-count (1+ index)))
+      :for poll-item :in (alexandria:ensure-list value)
+      :for index :from 0
+      :as poll-item-ptr = (cffi:mem-aref poll-array '%zmq::pollitem-t index)
+      :do
+         (setf (slot-value poll-item 'poll-item-ptr) poll-item-ptr)
+         (set-events poll-item)     
+      :finally (setf poll-count (1+ index)))
     (setf poll-items (alexandria:ensure-list value))
     value))
 
 (defmethod initialize-instance :after ((poll-list poll-list) &key poll-items)
+  (setf (slot-value poll-list 'poll-array)
+        (cffi:foreign-alloc '%zmq::pollitem-t
+                            :count (slot-value poll-list 'poll-array-size)))
   (when poll-items
     (setf (poll-items poll-list) poll-items)))
 
@@ -131,5 +125,6 @@
 (defmacro with-poll-list ((poll-list &rest poll-items) &body body)
   `(let ((,poll-list (make-poll-list ,@poll-items)))
      (unwind-protect
-          ,@body
+          (progn
+            ,@body)
        (destroy-poll-list ,poll-list))))
