@@ -23,18 +23,17 @@
       (setf %zmq::socket (slot-value socket 'socket:ptr)
             %zmq::events (+ (if (member :pollin events) %zmq::+pollin+ 0)
                             (if (member :pollout events) %zmq::+pollout+ 0)
-                            (if (member :pollerr events) %zmq::+pollerr+ 0)))
-      (format t "~a ~a" %zmq::socket %zmq::events))))
+                            (if (member :pollerr events) %zmq::+pollerr+ 0))))))
 
 
 (defun has-events-p (poll-item-ptr)
   (cffi:with-foreign-slots ((%zmq::revents) poll-item-ptr %zmq::pollitem-t)
-    (values
+    (list
      (unless (zerop (boole boole-and %zmq::revents %zmq::+pollin+))
        :pollin)
      (unless (zerop (boole boole-and %zmq::revents %zmq::+pollout+))
        :pollout)
-     (unless (zerop (boole boole-and %zmq::revents %zmq::+pollin+))
+     (unless (zerop (boole boole-and %zmq::revents %zmq::+pollerr+))
        :pollerr))))
 
 (defclass poll-item ()
@@ -42,7 +41,8 @@
            :reader socket)
    (events :initarg :events
            :accessor events)
-   (revents :reader revents)
+   (revents :reader revents
+            :initform nil)
    (poll-item-ptr)))
 
 (defmethod (setf events) (value (poll-item poll-item))
@@ -69,21 +69,21 @@
                (poll-array-size poll-array-size)
                (poll-items poll-items))
       poll-list
-    (when (> (length poll-list) poll-array-size)
-      (cffi:foreign-free poll-array)
-      (setf poll-array-size (* poll-array-size 2)
-            poll-array (cffi:foreign-alloc '%zmq::pollitem-t
-                                           :count poll-array-size)))
-    (loop
-      :for poll-item :in (alexandria:ensure-list value)
-      :for index :from 0
-      :as poll-item-ptr = (cffi:mem-aref poll-array '%zmq::pollitem-t index)
-      :do
-         (setf (slot-value poll-item 'poll-item-ptr) poll-item-ptr)
-         (set-events poll-item)     
-      :finally (setf poll-count (1+ index)))
-    (setf poll-items (alexandria:ensure-list value))
-    value))
+    (let ((value (alexandria:ensure-list value)))
+      (when (> (length value) poll-array-size)
+        (cffi:foreign-free poll-array)
+        (setf poll-array-size (* poll-array-size 2)
+              poll-array (cffi:foreign-alloc '%zmq::pollitem-t
+                                             :count poll-array-size)))
+      (loop
+        :for poll-item :in value
+        :for index :from 0
+        :as poll-item-ptr = (cffi:mem-aref poll-array '%zmq::pollitem-t index)
+        :do
+           (setf (slot-value poll-item 'poll-item-ptr) poll-item-ptr)
+           (set-events poll-item)     
+        :finally (setf poll-count (1+ index)))
+      (setf poll-items value))))
 
 (defmethod initialize-instance :after ((poll-list poll-list) &key poll-items)
   (setf (slot-value poll-list 'poll-array)
