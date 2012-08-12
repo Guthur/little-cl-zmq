@@ -37,34 +37,32 @@
       (zmq:send-message identified "ROUTER uses REQ's socket identity")
       (dump sink))))
 
+(defun worker-task-a ()
+  (zmq:with-context (ctx)
+    (zmq:with-socket (worker ctx :dealer
+                             :connect "ipc://routing.ipc"
+                             :identity "A")
+      (loop
+        :for count :from 0
+        :until (string= "END" (zmq:receive-message worker :string))
+        :finally (format t "A received: ~a~%" count)))))
 
-(let ((out *standard-output*))
-  (defun worker-task-a ()
-    (zmq:with-context (ctx)
-      (zmq:with-socket (worker ctx :dealer
-                               :connect "ipc://routing.ipc"
-                               :identity "A")
-        (loop
-          :for count :from 0
-          :until (string= "END" (zmq:receive-message worker :string))
-          :finally (format out "A received: ~a~%" count))))))
-
-(let ((out *standard-output*))
-  (defun worker-task-b ()
-    (zmq:with-context (ctx)
-      (zmq:with-socket (worker ctx :dealer
-                               :connect "ipc://routing.ipc"
-                               :identity "B")
-        (loop
-          :for count :from 0
-          :until (string= "END" (zmq:receive-message worker :string))
-          :finally (format out "B received: ~a~%" count))))))
+(defun worker-task-b ()
+  (zmq:with-context (ctx)
+    (zmq:with-socket (worker ctx :dealer
+                             :connect "ipc://routing.ipc"
+                             :identity "B")
+      (loop
+        :for count :from 0
+        :until (string= "END" (zmq:receive-message worker :string))
+        :finally (format t "B received: ~a~%" count)))))
 
 (defun rtdealer ()
   (zmq:with-context (ctx)
     (zmq:with-socket (client ctx :router :bind "ipc://routing.ipc")
       (let ((worker-a (bt:make-thread #'worker-task-a :name "Worker A"))
             (worker-b (bt:make-thread #'worker-task-b :name "Worker B")))
+        (declare (ignore worker-a worker-b))
         (sleep 1)
         (loop
           :for task-number :below 10
@@ -108,6 +106,7 @@
                        :collect (bt:make-thread #'worker-task
                                                 :name (format nil "Worker-~d"
                                                               count)))))
+        (declare (ignore workers))
         (loop
           :for task-number :below (* +number-of-workers+ 10)
           :as address = (zmq:receive-message client :string)
@@ -172,7 +171,7 @@
            (zmq:send-message worker nil :send-more t)
            (zmq:send-message worker "OK")))))
 
-#++(defun lru-queue ()
+(defun lru-queue ()
   (zmq:with-context (ctx)
     (zmq:with-sockets ((frontend ctx :router :bind "ipc://frontend.ipc")
                        (backend ctx :router :bind "ipc://backend.ipc"))
@@ -189,9 +188,44 @@
                                          :name (format nil "Worker-~s"
                                                        worker))))
             (available-workers (make-list 0)))
-        (zmq:with-poll-list (poll-front-back (fb-front frontend :pollin)
-                                             (fb-back backend :pollin))
-          (zmq:with-poll-list (poll-back (b-back backend :pollin))
-            (loop
-             (zmq:poll (if available-workers
-                           poll-front-back) ))))))))
+        (zmq:with-poll-list (poll-list)
+          (loop
+            :with client-number = +number-clients+
+            :do
+               (let ((front (zmq:make-poll-item frontend :pollin))
+                     (back (zmq:make-poll-item backend :pollin)))
+                 (if (null available-workers)
+                     (setf (zmq:poll-items poll-list) back)
+                     (setf (zmq:poll-items poll-list) (list back front)))
+                 (zmq:poll poll-list)
+                 (when (zmq:revents back)
+                   (setf available-workers
+                         (append available-workers
+                                 (list (zmq:receive-message backend :octet))))
+                   (zmq:receive-message backend :octet)
+                   (let ((client-address (zmq:receive-message backend :string)))
+                     (unless (string= "READY" client-address)
+                       (zmq:receive-message backend :octet)
+                       (let ((reply (zmq:receive-message backend :octet)))
+                         (zmq:send-message frontend client-address :send-more t)
+                         (zmq:send-message frontend nil :send-more t)
+                         (zmq:send-message frontend reply)
+                         (decf client-number)))))
+                 (when (zmq:revents front)
+                   (let ((client-address (zmq:receive-message frontend :string))
+                         (empty (zmq:receive-message frontend :octet))
+                         (request (zmq:receive-message frontend :octet)))
+                     (assert (zerop (length empty)))
+                     (zmq:send-message backend (pop available-workers)
+                                       :send-more t)
+                     (zmq:send-message backend nil :send-more t)
+                     (zmq:send-message backend client-address  :send-more t)
+                     (zmq:send-message backend nil :send-more t)
+                     (zmq:send-message backend request))))
+            :until (zerop (1- client-number))))
+        (loop
+          :for client :in clients
+          :do
+             (when (bt:thread-alive-p client)
+               (bt:destroy-thread client)))
+        (loop :for worker :in workers :do (bt:destroy-thread worker))))))

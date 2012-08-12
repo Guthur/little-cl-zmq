@@ -94,25 +94,27 @@ Message data as string"))
   "Get message data as string"
   (with-slots ((msg-t msg-t))
       message
-    (cffi:foreign-string-to-lisp (%zmq::msg-data msg-t))))
+    (cffi:foreign-string-to-lisp (%zmq::msg-data msg-t)
+                                 :count (%zmq::msg-size msg-t))))
 
 (defmethod (setf data) ((data string) (message message))
   "Set message data from string"
   (with-slots ((msg-t msg-t))
       message
-    (let ((len (1+ (length data))))
+    (let ((len (length data)))
       (%zmq::msg-close msg-t)
       (%zmq::msg-init-size msg-t len)
-      (cffi:lisp-string-to-foreign data (%zmq::msg-data msg-t) len))
+      (cffi:lisp-string-to-foreign data (%zmq::msg-data msg-t) (1+ len)))
     data))
 
 (defmethod initialize-instance :around ((message string-message)
                                         &key string)
   (declare (type (string) string))
-  (call-next-method message
-                    :size (1+ (length string)))
-  (cffi:lisp-string-to-foreign string (%zmq::msg-data (msg-t-ptr message))
-                               (1+ (length string))))
+  (let ((len (length string)))
+    (call-next-method message
+                      :size len)
+    (cffi:lisp-string-to-foreign string (%zmq::msg-data (msg-t-ptr message))
+                                 (1+ len))))
 
 ;;; Octet Message
 

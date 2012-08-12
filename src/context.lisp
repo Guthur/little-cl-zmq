@@ -35,8 +35,8 @@
      +event-disconnected+))
 
 (defclass context ()
-  ((io-threads)
-   (max-sockets)
+  ((io-threads :accessor io-threads)
+   (max-sockets :accessor max-sockets)
    (ptr :reader ptr)))
 
 (defmethod (setf io-threads) (value (context context))
@@ -55,7 +55,7 @@
 (defmethod max-sockets ((context context))
   (%zmq::ctx-get (slot-value context 'ptr) +max-sockets+))
 
-(defmethod destroy ((context context))
+(defun destroy (context)
   (%zmq::ctx-destroy (slot-value context 'ptr)))
 
 (defmethod initialize-instance ((context context) &key
@@ -89,6 +89,7 @@
     ((socket :pointer)
      (event :int)
      (data :pointer event-data-t))
+  (declare (ignore socket data))
   (unless (zerop (boole boole-and event +event-connected+))
     (format t "Connected~%"))
   (unless (zerop (boole boole-and event +event-connect-delayed+))

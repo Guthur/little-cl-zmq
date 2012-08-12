@@ -34,6 +34,7 @@
 (defun run-msreader ()
   (let ((weather-server (bt:make-thread #'chapter-1::weather-server
                                         :name "Weather Server")))
+    (declare (ignore weather-server))
     (mspoller)))
 
 (defun mspoller ()
@@ -41,54 +42,54 @@
     (zmq:with-sockets ((receiver ctx :pull :connect "tcp://localhost:5557")
                        (subscriber ctx :sub :connect "tcp://localhost:5556"))
       (setf (zmq:subscribe subscriber) "10001 ")
-      (zmq:with-poll-list (poll-list (recv-item receiver :pollin)
-                                     (sub-item subscriber :pollin))
-        (zmq:with-message (msg)
-          (loop
-           (when (zmq:poll poll-list)
-             (when (zmq:has-events-p recv-item)
-               (zmq:receive-message receiver msg))
-             (when (zmq:has-events-p sub-item)
-               (zmq:receive-message subscriber msg)))))))))
-
-
-(let ((out *standard-output*))
-  (defun taskwork2 ()
-    (zmq:with-context (ctx)
-      (zmq:with-sockets ((receiver ctx :pull :connect "tcp://localhost:5557")
-                         (sender ctx :push :connect "tcp://localhost:5558")
-                         (controller ctx :sub :connect "tcp://localhost:5559"
-                                     :subscribe ""))
-        (zmq:with-message (msg)
-          (zmq:with-poll-list (poll-list (recv receiver :pollin)
-                                         (control controller :pollin))
+      (let ((recv-item (zmq:make-poll-item receiver :pollin))
+            (sub-item (zmq:make-poll-item subscriber :pollin)))
+        (zmq:with-poll-list (poll-list recv-item sub-item)
+          (setf (poll::poll-items poll-list) (list recv-item sub-item))
+          (zmq:with-message (msg)
             (loop
              (when (zmq:poll poll-list)
-               (when (zmq:has-events-p recv)
-                 (zmq:receive-message receiver msg :as 'zmq:string-message)
-                 (sleep (/ (read-from-string (zmq:data msg)) 1000.0))
-                 (zmq:send-message sender msg))
-               (when (zmq:has-events-p control)
+               (when (zmq:revents recv-item)
+                 (zmq:receive-message receiver msg))
+               (when (zmq:revents sub-item)
+                 (zmq:receive-message subscriber msg))))))))))
+
+(defun taskwork2 ()
+  (zmq:with-context (ctx)
+    (zmq:with-sockets ((receiver ctx :pull :connect "tcp://localhost:5557")
+                       (sender ctx :push :connect "tcp://localhost:5558")
+                       (controller ctx :sub :connect "tcp://localhost:5559"
+                                            :subscribe ""))
+      (zmq:with-message (msg)
+        (let ((recv (zmq:make-poll-item receiver :pollin))
+              (control (zmq:make-poll-item controller :pollin)))
+          (zmq:with-poll-list (poll-list recv control)
+            (loop
+             (when (zmq:poll poll-list)
+               (when (zmq:revents recv)
+                 (let ((payload (zmq:receive-message receiver :string)))
+                   (sleep (/ (read-from-string payload) 1000.0))
+                   (zmq:send-message sender payload)))
+               (when (zmq:revents control)
                  (return))))))))))
 
-(let ((out *standard-output*))
-  (defun tasksink2 ()
-    (zmq:with-context (ctx)
-      (zmq:with-sockets ((receiver ctx :pull :bind "tcp://*:5558")
-                         (controller ctx :pub :bind "tcp://*:5559"))
-        (zmq:with-message (msg)
-          (zmq:receive-message receiver msg)
-          (loop
-           :for task-number :below 100
-           :with start-time = (get-internal-real-time)
-           :do
-           (zmq:receive-message receiver msg)
-           (if (zerop (mod task-number 10))
-               (format out ":")
-               (format out "."))
-           :finally (format out "Total elapsed time: ~d msec~%"
-                            (- (get-internal-real-time) start-time))))
-        (zmq:send-message controller "KILL")))))
+(defun tasksink2 ()
+  (zmq:with-context (ctx)
+    (zmq:with-sockets ((receiver ctx :pull :bind "tcp://*:5558")
+                       (controller ctx :pub :bind "tcp://*:5559"))
+      (zmq:with-message (msg)
+        (zmq:receive-message receiver msg)
+        (loop
+          :for task-number :below 100
+          :with start-time = (get-internal-real-time)
+          :do
+             (zmq:receive-message receiver msg)
+             (if (zerop (mod task-number 10))
+                 (format t ":")
+                 (format t "."))
+          :finally (format t "Total elapsed time: ~d msec~%"
+                           (- (get-internal-real-time) start-time))))
+      (zmq:send-message controller "KILL"))))
 
 
 (defun run-parallel-pipeline (&optional (worker-count 1))
@@ -98,6 +99,7 @@
                                            :name (format nil "Worker-~D"
                                                          (1+ count)))))
         (sink (bt:make-thread #'tasksink2 :name "Sink")))
+    (declare (ignore workers))
     (chapter-1::ventilator)
     (bt:join-thread sink)))
 
@@ -162,4 +164,3 @@
         :as msg = (zmq:receive-message subscriber :string)
         :do (format t "~a~%" msg)
         :until (string= "END" msg)))))
-

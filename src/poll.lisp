@@ -28,13 +28,11 @@
 
 (defun has-events-p (poll-item-ptr)
   (cffi:with-foreign-slots ((%zmq::revents) poll-item-ptr %zmq::pollitem-t)
-    (list
-     (unless (zerop (boole boole-and %zmq::revents %zmq::+pollin+))
-       :pollin)
-     (unless (zerop (boole boole-and %zmq::revents %zmq::+pollout+))
-       :pollout)
-     (unless (zerop (boole boole-and %zmq::revents %zmq::+pollerr+))
-       :pollerr))))
+    (loop
+      :for zmq-event :in (list %zmq::+pollin+ %zmq::+pollout+ %zmq::+pollerr+)
+      :for revent :in '(:pollin :pollout :pollerr)
+      :unless (zerop (boole boole-and %zmq::revents zmq-event))
+        :collect revent)))
 
 (defclass poll-item ()
   ((socket :initarg :socket
@@ -52,6 +50,9 @@
     (setf events (alexandria:ensure-list value))
     (when poll-item-ptr
       (set-events poll-item))))
+
+(defun reset-revents (poll-item)
+  (setf (slot-value poll-item 'revents) nil))
 
 (defun make-poll-item (socket &rest events)
   (make-instance 'poll-item :socket socket :events events))
@@ -105,21 +106,24 @@
                (poll-count poll-count))
       poll-list
     (loop
-     :for item :in poll-items
-     :for index :from 0
-     :do
-     (setf (slot-value item 'revents) nil))
+      :for item :in poll-items
+      :do
+         (setf (cffi:foreign-slot-value (slot-value item 'poll-item-ptr)
+                                        '%zmq::pollitem-t
+                                        '%zmq::revents)
+               0
+               (slot-value item 'revents) nil))
     (let ((evts (%zmq:with-eintr-retry eintr-retry
                   (%zmq::poll poll-array poll-count timeout))))
       (unless (zerop evts)
         (loop
-         :for item :in poll-items
-         :for index :below poll-count
-         :do
-         (setf (slot-value item 'revents)
-               (has-events-p (cffi:mem-aref poll-array
-                                            '%zmq::pollitem-t
-                                            index))))
+          :for item :in poll-items
+          :for index :below poll-count
+          :do
+             (setf (slot-value item 'revents)
+                   (has-events-p (cffi:mem-aref poll-array
+                                                '%zmq::pollitem-t
+                                                index)))) 
         (values t evts)))))
 
 (defmacro with-poll-list ((poll-list &rest poll-items) &body body)
