@@ -210,12 +210,6 @@
 (defcfun* ("zmq_msg_size" msg-size) size-t
   (msg :pointer msg-t))
 
-(defcfun* ("zmq_getmsgopt" getmsgopt) :int
-  (msg :pointer msg-t)
-  (option :int)
-  (optval :pointer)
-  (optvallen :pointer))
-
 ;;; ZMQ infrastructure
 
 ;;; DEPRECATED

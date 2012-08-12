@@ -7,10 +7,7 @@
   (:nicknames #:zmq)
   (:shadowing-import-from #:socket
                           #:push
-                          #:identity
-                          #:bind
-                          #:connect
-                          #:disconnect)
+                          #:identity)
   (:import-from #:%zmq
                 #:version
                 #:eagain
@@ -21,6 +18,7 @@
            #:with-eintr-retry
            #:send-message
            #:receive-message
+           #:receive-all
            #:bind
            #:connect
            #:disconnect
@@ -49,7 +47,14 @@
            #:string-message
            #:octet-message
            #:error-number
-           #:eagain))
+           #:eagain
+           #:bind
+           #:connect
+           #:disconnect
+           #:make-poll-item
+           #:events
+           #:poll-items
+           #:revents))
 
 (in-package #:little-zmq)
 
@@ -130,48 +135,66 @@
                                    :eintr-retry eintr-retry)))))
 
 (declaim (inline receive-message))
-(defgeneric receive-message (socket message &key blocking as eintr-retry))
+(defgeneric receive-message (socket message &key blocking eintr-retry))
 
 (defmethod receive-message (socket (message message)
-                            &key (blocking t) as (eintr-retry t))
+                            &key (blocking t) (eintr-retry t))
   (declare (type (boolean) eintr-retry blocking)
            (type message message)
-           (type (or null symbol) as)
            (type socket socket))
   (let ((length (%zmq::recvmsg (slot-value socket 'ptr)
                                (msg-t-ptr message)
                                (if blocking 0 %zmq::+dontwait+)
                                eintr-retry)))
-    (values
-     (if as (change-class message as) message)
-     length)))
+    (values message length)))
+
+
 
 (defmethod receive-message (socket (message (eql :string))
-                            &key (blocking t) as (eintr-retry t))
-  (declare (ignore as)
-           (type socket socket))
+                            &key (blocking t) (eintr-retry t))
+  (declare (type socket socket))
   (with-message (msg)
-    (data (receive-message socket msg :as 'string-message
-                                      :blocking blocking
-                                      :eintr-retry eintr-retry))))
+    (receive-message socket msg :blocking blocking
+                                :eintr-retry eintr-retry)
+    (data (change-class msg 'string-message))))
 
 (defmethod receive-message (socket (message (eql :octet))
-                            &key (blocking t) as (eintr-retry t))
-  (declare (ignore as)
-           (type socket socket))
+                            &key (blocking t) (eintr-retry t))
+  (declare (type socket socket))
   (with-message (msg)
-    (data (receive-message socket msg :as 'octet-message
-                                      :blocking blocking
-                                      :eintr-retry eintr-retry))))
+    (receive-message socket msg :blocking blocking
+                                :eintr-retry eintr-retry)
+    (data (change-class msg 'octet-message))))
 
+(declaim (inline receive-all))
+(defgeneric receive-all (socket type &key blocking eintr-retry))
+
+(defmethod receive-all (socket (type (eql :string))
+                        &key (blocking t) (eintr-retry t))
+  (with-message (msg)
+    (change-class msg 'string-message)
+    (loop
+      :collect (data (receive-message socket msg
+                                      :blocking blocking
+                                      :eintr-retry eintr-retry))
+      :while (zmq:rcvmore socket))))
+
+(defmethod receive-all (socket (type (eql :octet))
+                        &key (blocking t) (eintr-retry t))
+  (with-message (msg)
+    (change-class msg 'octet-message)
+    (loop
+      :collect (data (receive-message socket msg
+                                      :blocking blocking
+                                      :eintr-retry eintr-retry))
+      :while (zmq:rcvmore socket))))
 
 (defun make-message-future (socket &key (blocking t) (eintr-retry t))
   (let ((more t))
-    (lambda (msg &key as)
+    (lambda (msg)
       (if more
           (progn
-            (receive-message socket msg :as as
-                                        :blocking blocking
+            (receive-message socket msg :blocking blocking
                                         :eintr-retry eintr-retry)
             (setf more (rcvmore socket))
             (values msg more))
@@ -182,11 +205,10 @@
                                &body body)
   (alexandria:with-gensyms (more)
     `(let ((,more t))
-       (flet ((,sym (msg &key as)
+       (flet ((,sym (msg)
                 (if ,more
                     (progn
                       (let ((res (receive-message ,socket msg
-                                                  :as as
                                                   :blocking ,blocking
                                                   :eintr-retry ,eintr-retry)))
                         (setf ,more (rcvmore ,socket))
