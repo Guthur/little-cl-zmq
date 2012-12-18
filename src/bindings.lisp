@@ -46,7 +46,7 @@
 (defun raise-error (errno)
   (declare (inline raise-error)
            (type fixnum errno))
-  (cond 
+  (cond
     ((eq +eagain+ errno) (error 'eagain :error-number errno))
     (t (error 'zmq-error :error-number errno))))
 
@@ -58,7 +58,7 @@
            (type (function (error) boolean) predicate))
   (tagbody retry
      (return-from call-with-retry
-       (handler-bind ((t (lambda (condition)                       
+       (handler-bind ((t (lambda (condition)
                            (when (funcall predicate condition)
                              (go retry)))))
          (funcall thunk)))))
@@ -135,7 +135,7 @@
          (binding-lisp-name (concatenate 'string "%" (symbol-name lisp-name))))
     `(progn
        (cffi:defcfun (,foreign-name ,(intern binding-lisp-name)) ,return-type
-         ,@args)       
+         ,@args)
        (defun ,lisp-name ,(append (loop :for arg :in args
                                         :collect (car arg))
                            '(&optional eintr-retry))
@@ -145,7 +145,7 @@
             retry
               (setf ret (,(intern binding-lisp-name)
                          ,@(loop :for arg :in args
-                                 :collect (car arg))))        
+                                 :collect (car arg))))
               (when ,(if (eq return-type :pointer)
                          '(cffi:null-pointer-p ret)
                          '(< ret 0))
@@ -234,10 +234,6 @@
   (option :int)
   (value :int))
 
-(defcfun* ("zmq_ctx_set_monitor" ctx-set-monitor) :int
-  (context :pointer)
-  (monitor :pointer))
-
 ;;; ZMQ Socket Definition
 
 (defcfun* ("zmq_socket" socket) :pointer
@@ -317,4 +313,3 @@
   (dst :pointer)
   (src :pointer)
   (len size-t))
-
