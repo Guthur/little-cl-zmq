@@ -6,8 +6,8 @@
    #:ptr
    #:socket
    #:rcvmore
-   #:pair 
-   #:pub 
+   #:pair
+   #:pub
    #:sub
    #:req
    #:rep
@@ -32,7 +32,7 @@
      (defgeneric (setf ,option-name) (value socket)
        ,doc)
      ,@(cond
-         ((eq type :binary)    
+         ((eq type :binary)
           `((defmethod (setf ,option-name) ((value string) (socket socket))
               (cffi:with-foreign-string (string value)
                 (%zmq::setsockopt (slot-value socket 'ptr) ,enum string
@@ -311,7 +311,7 @@
              :collect
              (let ((socket-pair (car socket-pair)))
                `(defmethod make-socket (ctx (type (eql ,(first socket-pair)))
-                                        &rest parameters)              
+                                        &rest parameters)
                   (change-class (make-zmq-socket ctx
                                                  ,(second socket-pair)
                                                  parameters)
@@ -378,7 +378,7 @@ ZMQ API Reference: http://api.zeromq.org/3-1:zmq-socket#toc12")))
 (defmacro with-socket ((socket context type &rest parameters)
                        &body body)
   (when (keywordp type)
-    (unless (find-method #'make-socket nil `(t (eql ,type)) nil)
+    (unless (find-method #'make-socket nil `(,(find-class t) (eql ,type)) nil)
       (error (format nil "Incorrect socket type specified (~s)~%" type))))
   `(let ((,socket (make-socket ,context ,type ,@parameters)))
      (unwind-protect
