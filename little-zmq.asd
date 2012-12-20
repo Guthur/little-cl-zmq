@@ -4,10 +4,10 @@
   (asdf:operate 'asdf:load-op 'cffi-grovel))
 
 (asdf:defsystem #:little-zmq
-  :serial t
   :depends-on (#:cffi
                #:alexandria)
   :components ((:module src
+                :serial t
                 :components ((:file "zmq-bindings-grovel")
                              (cffi-grovel:grovel-file "grovel.spec")
                              (:file "bindings")
@@ -31,9 +31,9 @@
                (:file "zguide/chapter-3")))
 
 (asdf:defsystem #:little-zmq.tests
-  :serial t
   :depends-on (#:bordeaux-threads
                #:little-zmq
                #:flexi-streams)
+  :serial t
   :components ((:file "tests/util")
                (:file "tests/perf")))
