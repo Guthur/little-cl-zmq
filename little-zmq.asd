@@ -6,6 +6,7 @@
 (asdf:defsystem #:little-zmq
   :depends-on (#:cffi
                #:alexandria)
+  :licence "MIT"
   :components ((:module src
                 :serial t
                 :components ((:file "zmq-bindings-grovel")
