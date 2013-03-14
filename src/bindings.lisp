@@ -17,7 +17,7 @@
 
 (cffi:define-foreign-library zeromq
   (:darwin (:or "libzmq.3.dylib" "libzmq.dylib"))
-  (:unix (:or "libzmq.so.3" "libzmq.so"))
+  (:unix (:or "libzmq.so.3.0.0"  "libzmq.so.3" "libzmq.so"))
   (:windows "libzmq.dll")
   (t "libzmq"))
 
