@@ -3,8 +3,7 @@
 (defpackage #:zmq-bindings
   (:documentation "Low level binding to ZeroMQ C API")
   (:nicknames #:%zmq)
-  (:use #:common-lisp
-        #:zmq-bindings-grovel)
+  (:use #:common-lisp)
   (:shadow #:close)
   (:export
    #:with-eintr-retry
@@ -24,6 +23,23 @@
 (cffi:use-foreign-library zeromq)
 
 (declaim (optimize (speed 3)))
+
+;;; Types and Constants
+
+(eval-when (:execute :load-toplevel :compile-toplevel)
+  (if (= (cffi:foreign-type-size :pointer) 4)
+      (progn
+        (cffi:defctype size-t :int32 "Representative of SIZE_T"))
+      (progn
+        (cffi:defctype size-t :int64 "Representative of SIZE_T"))))
+
+
+(defconstant +eintr+ 4)
+(defconstant +einval+ 22)
+(defconstant +emfile+ 24)
+(defconstant +efault+ 14)
+(defconstant +enodev+ 19)
+(defconstant +eagain+ 11)
 
 ;;;; ZMQ error conditions
 
