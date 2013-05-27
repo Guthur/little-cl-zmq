@@ -60,7 +60,6 @@
 
 (declaim (optimize (speed 3)))
 
-(declaim (inline send-message))
 (defgeneric send-message (socket data &key eintr-retry send-more))
 
 (defmethod send-message (socket (data cons)
@@ -134,7 +133,6 @@
           (send-message socket msg :send-more send-more
                                    :eintr-retry eintr-retry)))))
 
-(declaim (inline receive-message))
 (defgeneric receive-message (socket message &key blocking eintr-retry))
 
 (defmethod receive-message (socket (message message)
@@ -166,7 +164,6 @@
                                 :eintr-retry eintr-retry)
     (data (change-class msg 'octet-message))))
 
-(declaim (inline receive-all))
 (defgeneric receive-all (socket type &key blocking eintr-retry))
 
 (defmethod receive-all (socket (type (eql :string))
