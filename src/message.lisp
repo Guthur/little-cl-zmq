@@ -94,27 +94,28 @@ Message data as string"))
   "Get message data as string"
   (with-slots ((msg-t msg-t))
       message
-    (cffi:foreign-string-to-lisp (%zmq::msg-data msg-t)
-                                 :count (%zmq::msg-size msg-t))))
+    (let ((ptr (%zmq::msg-data msg-t))
+          (len (%zmq::msg-size msg-t)))
+      (cffi:foreign-string-to-lisp ptr (unless (= (cffi:mem-aref ptr :char (1- len))
+                                                  (char-code #\null))
+                                         len)))))
 
 (defmethod (setf data) ((data string) (message message))
   "Set message data from string"
   (with-slots ((msg-t msg-t))
       message
-    (let ((len (length data)))
+    (let ((len (1+ (length data))))
       (%zmq::msg-close msg-t)
       (%zmq::msg-init-size msg-t len)
-      (cffi:lisp-string-to-foreign data (%zmq::msg-data msg-t) (1+ len)))
+      (cffi:lisp-string-to-foreign data (%zmq::msg-data msg-t) len))
     data))
 
 (defmethod initialize-instance :around ((message string-message)
                                         &key string)
   (declare (type (string) string))
-  (let ((len (length string)))
-    (call-next-method message
-                      :size len)
-    (cffi:lisp-string-to-foreign string (%zmq::msg-data (msg-t-ptr message))
-                                 (1+ len))))
+  (let ((len (1+ (length string))))
+    (call-next-method message :size len)
+    (cffi:lisp-string-to-foreign string (%zmq::msg-data (msg-t-ptr message)) len)))
 
 ;;; Octet Message
 

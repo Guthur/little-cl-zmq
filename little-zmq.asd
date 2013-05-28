@@ -9,9 +9,7 @@
   :licence "MIT"
   :components ((:module src
                 :serial t
-                :components ((:file "zmq-bindings-grovel")
-                             (cffi-grovel:grovel-file "grovel.spec")
-                             (:file "bindings")
+                :components ((:file "bindings")
                              (:file "context")
                              (:file "socket")
                              (:file "message")
