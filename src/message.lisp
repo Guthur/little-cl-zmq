@@ -22,8 +22,6 @@
 
 (declaim (optimize (speed 3)))
 
-(defparameter)
-
 ;;; Standard message
 (defclass message ()
   ((msg-t
