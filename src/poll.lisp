@@ -74,13 +74,13 @@
       (when (> (length value) poll-array-size)
         (cffi:foreign-free poll-array)
         (setf poll-array-size (* poll-array-size 2)
-              poll-array (cffi:foreign-alloc '(:pointer (:struct %zmq::pollitem-t))
+              poll-array (cffi:foreign-alloc '(:struct %zmq::pollitem-t)
                                              :count poll-array-size)))
       (loop
         :for poll-item :in value
         :for index :from 0
        :as poll-item-ptr = (cffi:mem-aref poll-array
-                                          '(:pointer (:struct %zmq::pollitem-t))
+                                          '(:struct %zmq::pollitem-t)
                                           index)
         :do
            (setf (slot-value poll-item 'poll-item-ptr) poll-item-ptr)
@@ -90,7 +90,7 @@
 
 (defmethod initialize-instance :after ((poll-list poll-list) &key poll-items)
   (setf (slot-value poll-list 'poll-array)
-        (cffi:foreign-alloc '(:pointer (:struct %zmq::pollitem-t))
+        (cffi:foreign-alloc '(:struct %zmq::pollitem-t)
                             :count (slot-value poll-list 'poll-array-size)))
   (when poll-items
     (setf (poll-items poll-list) poll-items)))
@@ -124,7 +124,7 @@
           :do
              (setf (slot-value item 'revents)
                    (has-events-p (cffi:mem-aref poll-array
-                                                '(:pointer (:struct %zmq::pollitem-t))
+                                                '(:struct %zmq::pollitem-t)
                                                 index))))
         (values t evts)))))
 
