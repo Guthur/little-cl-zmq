@@ -54,7 +54,7 @@ Message Base Class. Can be use to access the raw data pointer"))
 (defmethod initialize-instance ((message message)
                                 &key (size nil))
   (declare (type (or fixnum null) size))
-  (setf (slot-value message 'msg-t) (cffi:foreign-alloc '(:pointer (:struct %zmq::msg-t))))
+  (setf (slot-value message 'msg-t) (cffi:foreign-alloc '(:struct %zmq::msg-t)))
   (cond
     (size
      (%zmq::msg-init-size (msg-t-ptr message) size))
