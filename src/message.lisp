@@ -32,6 +32,12 @@
 Class precedence: t
 Message Base Class. Can be use to access the raw data pointer"))
 
+(defmethod print-object ((message message) stream)
+  (change-class message 'octet-message)
+  (format stream "ZeroMQ Message ~A~%" (msg-t-ptr message))
+  (format stream "Message length: ~A:~%" (%zmq::msg-size (msg-t-ptr message)))
+  (format stream "Message data: ~A:~%" (data message)))
+
 (defmethod data ((message message))
   "Get raw data pointer from message"
   (%zmq::msg-data (msg-t-ptr message)))
@@ -48,7 +54,7 @@ Message Base Class. Can be use to access the raw data pointer"))
 (defmethod initialize-instance ((message message)
                                 &key (size nil))
   (declare (type (or fixnum null) size))
-  (setf (slot-value message 'msg-t) (cffi:foreign-alloc '%zmq::msg-t))
+  (setf (slot-value message 'msg-t) (cffi:foreign-alloc '(:pointer (:struct %zmq::msg-t))))
   (cond
     (size
      (%zmq::msg-init-size (msg-t-ptr message) size))
@@ -84,6 +90,13 @@ Message Base Class. Can be use to access the raw data pointer"))
 
 ;;; String Message
 
+(define-condition non-null-terminate-string-error (error)
+  ((message :initarg :message
+            :reader message))
+  (:report (lambda (condition stream)
+             (format stream "A non-null terminate string-message was received.~%")
+             (format stream "~A~%" (message condition)))))
+
 (defclass string-message (message)
   ()
   (:documentation "Class: string-message
@@ -94,28 +107,28 @@ Message data as string"))
   "Get message data as string"
   (with-slots ((msg-t msg-t))
       message
-    (let ((ptr (%zmq::msg-data msg-t))
-          (len (%zmq::msg-size msg-t)))
-      (cffi:foreign-string-to-lisp ptr (unless (= (cffi:mem-aref ptr :char (1- len))
-                                                  (char-code #\null))
-                                         len)))))
+    (let* ((ptr (%zmq::msg-data msg-t))
+           (end-octet (cffi:mem-aref ptr :char (1- (%zmq::msg-size msg-t)))))
+      (if (= end-octet (char-code #\null))
+          (cffi:foreign-string-to-lisp ptr)
+          (error (make-condition 'non-null-terminate-string-error :message message))))))
 
 (defmethod (setf data) ((data string) (message message))
   "Set message data from string"
   (with-slots ((msg-t msg-t))
       message
-    (let ((len (1+ (length data))))
+    (let ((message-size (1+ (length data))))
       (%zmq::msg-close msg-t)
-      (%zmq::msg-init-size msg-t len)
-      (cffi:lisp-string-to-foreign data (%zmq::msg-data msg-t) len))
+      (%zmq::msg-init-size msg-t message-size)
+      (cffi:lisp-string-to-foreign data (%zmq::msg-data msg-t) message-size))
     data))
 
 (defmethod initialize-instance :around ((message string-message)
                                         &key string)
   (declare (type (string) string))
-  (let ((len (1+ (length string))))
-    (call-next-method message :size len)
-    (cffi:lisp-string-to-foreign string (%zmq::msg-data (msg-t-ptr message)) len)))
+  (let ((message-size (1+ (length string))))
+    (call-next-method message :size message-size)
+    (cffi:lisp-string-to-foreign string (%zmq::msg-data (msg-t-ptr message)) message-size)))
 
 ;;; Octet Message
 
@@ -129,11 +142,11 @@ Message data as octets"))
   "Get message data as octet array"
   (with-slots ((msg-t msg-t))
       message
-    (let ((len (%zmq::msg-size msg-t))
+    (let ((message-size (%zmq::msg-size msg-t))
           (ptr (%zmq::msg-data msg-t)))
-      (declare (type fixnum len))
-      (let ((array (make-array len :element-type '(unsigned-byte 8))))
-        (dotimes (index len)
+      (declare (type fixnum message-size))
+      (let ((array (make-array message-size :element-type '(unsigned-byte 8))))
+        (dotimes (index message-size)
           (setf (aref array index) (cffi:mem-aref ptr :uchar index)))
         array))))
 
@@ -142,9 +155,9 @@ Message data as octets"))
   (declare (type (simple-array (unsigned-byte 8) (*)) data))
   (with-slots ((msg-t msg-t))
       message
-    (let ((len (length data)))
+    (let ((message-size (length data)))
       (%zmq::msg-close msg-t)
-      (%zmq::msg-init-size msg-t len)
+      (%zmq::msg-init-size msg-t message-size)
       (let ((ptr (%zmq::msg-data msg-t)))
         (loop :for octet :across data
               :for index  fixnum :from 0 :below most-positive-fixnum
@@ -162,9 +175,6 @@ Message data as octets"))
           (setf (cffi:mem-aref ptr :uchar index) octet))))
 
 ;;; Message Cleanup
-(declaim (inline close-message))
-(declaim (inline free-message))
-(declaim (inline destroy-message))
 (defgeneric close-message (message)
   (:documentation "Close message"))
 (defgeneric free-message (message)
@@ -199,8 +209,6 @@ Message data as octets"))
     (destroy-message (cdr message))))
 
 ;;; Make message interface
-
-(declaim (inline make-message))
 (defgeneric make-message (data)
   (:documentation "Make message"))
 
@@ -267,13 +275,3 @@ Binds multi messages declared in lambda-lists of message-list in the form (MSG &
 (defun binary-address-to-string (message)
   (let ((message (change-class message 'octet-message)))
     (format nil "~{~X~}" (data message))))
-
-#++(defun unwra (msg-list)
-  (let ((address (pop msg-list)))
-    (when (zerop (size (first msg-list)))
-      (pop msg-list))
-    address))
-
-(defun wrap (address msg-list)
-  (append (list address) (append (list (make-message 0))
-                                 (alexandria:ensure-list msg-list))))
